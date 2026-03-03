@@ -89,12 +89,40 @@ NLTA = int(LTA_SEC * SAMPLE_RATE)
 MIN_DUR_SAMP = int(MIN_DURATION * SAMPLE_RATE)
 MIN_GAP_SAMP = int(MIN_GAP * SAMPLE_RATE)
 
-# === Frequency bands ===
+# === Three-pass detection strategy ===
+# Non-overlapping frequency passes so each STA/LTA sees only its own
+# energy regime. Breakpoints at 15 Hz and 30 Hz chosen from spectral
+# analysis: dominant earthquake/T-phase energy < 15 Hz; fin whale calls
+# ~20 Hz in the mid band; ice quakes span all three passes.
+PASSES = {
+    1: {
+        "label": "low",
+        "filter": "lowpass",
+        "cutoff": 15,
+        "band": (1, 15),
+        "targets": "Earthquakes, T-phases, ice quakes (low-freq component)",
+    },
+    2: {
+        "label": "mid",
+        "filter": "bandpass",
+        "cutoff": (15, 30),
+        "band": (15, 30),
+        "targets": "Fin whale calls (~20 Hz), ice quakes, mixed seismicity",
+    },
+    3: {
+        "label": "high",
+        "filter": "highpass",
+        "cutoff": 30,
+        "band": (30, 250),
+        "targets": "Ice quakes (high-freq), other whale calls, biological",
+    },
+}
+
+# Legacy band definitions (kept for backward compatibility with figures)
 BANDS = {
-    "low":       (1, 50),     # Earthquakes, T-phases
-    "mid":       (10, 200),   # Ice quakes
-    "high":      (50, 250),   # Biological (whale calls)
-    "broadband": (1, 250),    # Everything
+    "low":  (1, 15),
+    "mid":  (15, 30),
+    "high": (30, 250),
 }
 
 # === Spectrogram parameters (matching make_spectrogram.py) ===
@@ -109,6 +137,14 @@ TUNE_FILES = {"00001282", "00001283", "00002166"}
 MOORING_KEYS = sorted(MOORINGS.keys())
 
 
+def lowpass_filter(data, cutoff_hz, fs=SAMPLE_RATE, order=4):
+    """Apply a Butterworth lowpass filter."""
+    nyq = fs / 2
+    wn = min(cutoff_hz / nyq, 0.999)
+    sos = butter(order, wn, btype='lowpass', output='sos')
+    return sosfilt(sos, data)
+
+
 def bandpass_filter(data, low_hz, high_hz, fs=SAMPLE_RATE, order=4):
     """Apply a Butterworth bandpass filter."""
     nyq = fs / 2
@@ -116,6 +152,28 @@ def bandpass_filter(data, low_hz, high_hz, fs=SAMPLE_RATE, order=4):
     high = min(high_hz / nyq, 0.999)
     sos = butter(order, [low, high], btype='bandpass', output='sos')
     return sosfilt(sos, data)
+
+
+def highpass_filter(data, cutoff_hz, fs=SAMPLE_RATE, order=4):
+    """Apply a Butterworth highpass filter."""
+    nyq = fs / 2
+    wn = max(cutoff_hz / nyq, 0.001)
+    sos = butter(order, wn, btype='highpass', output='sos')
+    return sosfilt(sos, data)
+
+
+def apply_pass_filter(data, pass_cfg):
+    """Apply the pre-filter for a detection pass."""
+    ftype = pass_cfg["filter"]
+    cutoff = pass_cfg["cutoff"]
+    if ftype == "lowpass":
+        return lowpass_filter(data, cutoff)
+    elif ftype == "bandpass":
+        return bandpass_filter(data, cutoff[0], cutoff[1])
+    elif ftype == "highpass":
+        return highpass_filter(data, cutoff)
+    else:
+        raise ValueError(f"Unknown filter type: {ftype}")
 
 
 def detect_in_band(data, band_name, band_range, file_ts):
@@ -298,28 +356,43 @@ def deduplicate_bands(detections):
     return merged
 
 
-def process_file(filepath, mooring_key):
-    """Process a single DAT file: detect events in all bands, deduplicate."""
+def process_file(filepath, mooring_key, pass_nums=None):
+    """Process a single DAT file: detect events in specified passes.
+
+    Each pass pre-filters into a non-overlapping frequency band, then
+    runs STA/LTA on the filtered signal. No cross-band deduplication
+    is needed because bands don't overlap.
+
+    Parameters
+    ----------
+    pass_nums : list of int, optional
+        Which passes to run (1, 2, 3). Default: all three.
+    """
+    if pass_nums is None:
+        pass_nums = list(PASSES.keys())
+
     file_ts, data, meta = read_dat(filepath)
 
     all_detections = []
-    for band_name, band_range in BANDS.items():
-        dets = detect_in_band(data, band_name, band_range, file_ts)
+    for pnum in pass_nums:
+        pcfg = PASSES[pnum]
+        # Pre-filter into this pass's frequency band
+        filtered_data = apply_pass_filter(data, pcfg)
+        # Run STA/LTA on the pre-filtered signal (single band)
+        band_name = pcfg["label"]
+        band_range = pcfg["band"]
+        dets = detect_in_band(filtered_data, band_name, band_range, file_ts)
+        for det in dets:
+            det["detection_pass"] = pnum
+            det["mooring"] = mooring_key
+            det["file_number"] = meta["file_number"]
+            det["instrument_id"] = meta["instrument_id"]
         all_detections.extend(dets)
 
-    # Deduplicate across bands
-    merged = deduplicate_bands(all_detections)
-
-    # Add metadata
-    for det in merged:
-        det["mooring"] = mooring_key
-        det["file_number"] = meta["file_number"]
-        det["instrument_id"] = meta["instrument_id"]
-
-    return merged
+    return all_detections
 
 
-def process_mooring(mooring_key, file_filter=None):
+def process_mooring(mooring_key, file_filter=None, pass_nums=None):
     """Process all files for one mooring."""
     info = MOORINGS[mooring_key]
     mooring_dir = DATA_ROOT / info["data_dir"]
@@ -338,7 +411,7 @@ def process_mooring(mooring_key, file_filter=None):
     for i, entry in enumerate(catalog):
         filepath = entry["path"]
         fname = filepath.stem
-        detections = process_file(filepath, mooring_key)
+        detections = process_file(filepath, mooring_key, pass_nums=pass_nums)
         all_events.extend(detections)
 
         if (i + 1) % 10 == 0 or (i + 1) == len(catalog):
@@ -377,13 +450,28 @@ def main():
                         help="Process single mooring (e.g., m1)")
     parser.add_argument("--file", type=str, default=None,
                         help="Process single file number (e.g., 00001282)")
+    parser.add_argument("--pass", type=str, default="all", dest="det_pass",
+                        help="Which pass(es) to run: 1, 2, 3, or 'all' (default: all)")
     args = parser.parse_args()
 
+    # Parse pass selection
+    if args.det_pass == "all":
+        pass_nums = list(PASSES.keys())
+    else:
+        pass_nums = [int(p.strip()) for p in args.det_pass.split(",")]
+        for p in pass_nums:
+            if p not in PASSES:
+                parser.error(f"Invalid pass number: {p}. Must be 1, 2, or 3.")
+
+    pass_descs = [f"Pass {p}: {PASSES[p]['label']} ({PASSES[p]['filter']} "
+                  f"{PASSES[p]['cutoff']} Hz)" for p in pass_nums]
+
     print("=" * 60)
-    print("BRAVOSEIS Event Detection")
+    print("BRAVOSEIS Event Detection — Three-Pass Strategy")
     print(f"  STA={STA_SEC}s, LTA={LTA_SEC}s, "
           f"trigger={TRIGGER}, detrigger={DETRIGGER}")
-    print(f"  Bands: {', '.join(BANDS.keys())}")
+    for desc in pass_descs:
+        print(f"  {desc}")
     print("=" * 60)
 
     # Determine file filter
@@ -406,7 +494,8 @@ def main():
     for mkey in moorings:
         info = MOORINGS[mkey]
         print(f"\n--- {mkey} / {info['name']} ({info['hydrophone']}) ---")
-        events = process_mooring(mkey, file_filter=file_filter)
+        events = process_mooring(mkey, file_filter=file_filter,
+                                pass_nums=pass_nums)
         all_events.extend(events)
         print(f"  {mkey}: {len(events)} events detected")
 
@@ -437,12 +526,14 @@ def main():
     # Save
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     suffix = ""
+    if args.det_pass != "all":
+        suffix += f"_pass{args.det_pass}"
     if args.tune:
-        suffix = "_tune"
+        suffix += "_tune"
     elif args.file:
-        suffix = f"_{args.file}"
+        suffix += f"_{args.file}"
     elif args.mooring:
-        suffix = f"_{args.mooring}"
+        suffix += f"_{args.mooring}"
 
     outpath = OUTPUT_DIR / f"event_catalogue{suffix}.parquet"
     df.to_parquet(outpath, index=False)

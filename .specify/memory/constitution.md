@@ -95,7 +95,41 @@ Multibeam bathymetry collected during the BRAVOSEIS cruise.
 - **Coverage**: Bransfield Strait regional
 - **Coordinate system**: WGS84 geographic (lon/lat)
 
-### 3. Sound Speed Profiles (XBT)
+### 3. SEASICK Manual Detection Catalogue (NOAA/PMEL)
+
+Manual detections and classifications from NOAA's SEASICK processing
+package. Fixed-width text format with locations and event types.
+
+- **Local path**: `/home/jovyan/my_data/bravoseis/NOAA/merged_data_amended.txt`
+- **Format**: Fixed-width text, 18,763 events
+- **Event types**: IQ (ice quake, 13,795), EQ (earthquake, 2,256),
+  IDK (unknown, 2,010), SS* (specific subtypes, ~430)
+- **Fields**: Timestamp (YYYYDDDHHMMSSF), n_moorings, mooring_order,
+  lat, lon, errors, location parameters, event type, in/out network, notes
+- **Date format**: Packed timestamp: year (4), day-of-year (3), HHMMSS (6),
+  fraction (1+)
+- **Known issue**: EQ events show seasonal pattern correlated with IQ events,
+  suggesting misclassifications in the manual picks. Use only high-confidence
+  events for validation (e.g., EQ events with low location error, or
+  multi-mooring IQ events with typical ice-quake spectral characteristics).
+- **Use**: Comparison with automated STA/LTA detections; benchmark for
+  the discrimination pipeline. Not ground truth — treat as a reference
+  catalogue with known limitations.
+
+### 4. Earthquake Catalogue (Orca Seismic Network)
+
+Located earthquake catalogue from the BRAVOSEIS OBS/land seismometer network
+for validation of hydroacoustic detections.
+
+- **Local path**: `/home/jovyan/my_data/bravoseis/earthquakes/Orca_EQ_data.csv`
+- **Format**: CSV, 5,790 events
+- **Columns**: x, y, z, zn, elevation, complete, erz, erh, date, lon, lat
+- **Date format**: MATLAB datenum (days since 0000-01-00)
+- **Coverage**: Bransfield Strait / Orca volcano region
+- **Use**: Cross-validation of hydroacoustic low-band detections against
+  independently located seismicity
+
+### 4. Sound Speed Profiles (XBT)
 
 In-situ expendable bathythermograph (XBT) profiles collected during the
 BRAVOSEIS deployment cruise (January 2019). These provide direct measurements
@@ -236,20 +270,61 @@ which they typically do since all moorings follow a similar schedule.
 
 Events are detected using an **STA/LTA (Short-Term Average / Long-Term
 Average) energy detector** — the standard first-pass method for seismo-
-acoustic data. Detection runs independently in **4 frequency bands**:
+acoustic data.
 
-| Band | Range | Target signals |
-|------|-------|----------------|
-| Low | 1–50 Hz | Earthquakes, T-phases |
-| Mid | 10–200 Hz | Ice quakes |
-| High | 50–250 Hz | Biological (whale calls) |
-| Broadband | 1–250 Hz | All signal types |
-
-**Starting STA/LTA parameters** (subject to tuning):
+**STA/LTA parameters**:
 - STA window: 2 s, LTA window: 60 s
 - Trigger: STA/LTA >= 3.0, Detrigger: STA/LTA <= 1.5
 - Min event duration: 0.5 s, Min inter-event gap: 2.0 s
-- Bandpass: 4th-order Butterworth, applied before STA/LTA
+- All filters: 4th-order Butterworth
+
+**Three-pass detection strategy**: Initial detection used 4 overlapping
+frequency bands (1–50, 10–200, 50–250, 1–250 Hz) with cross-band
+deduplication. QC revealed two problems: (1) low-frequency energy (< 15 Hz,
+primarily T-phases and earthquake coda) dominated the LTA window,
+suppressing STA/LTA ratios for concurrent higher-frequency transients; and
+(2) the deduplication step masked mid/high events by relabeling them under
+the highest-SNR band (almost always low). Average spectral profiles across
+moorings confirmed dominant energy below 15–20 Hz.
+
+The solution separates the data into **three non-overlapping frequency
+bands** before computing STA/LTA, so each pass's LTA reflects only its own
+frequency regime:
+
+| Pass | Filter | Range | Target signals |
+|------|--------|-------|----------------|
+| Pass 1 | Lowpass 15 Hz | 1–15 Hz | Earthquakes, T-phases, ice quakes (low-freq component) |
+| Pass 2 | Bandpass 15–30 Hz | 15–30 Hz | Fin whale calls (~20 Hz), ice quakes, mixed seismicity |
+| Pass 3 | Highpass 30 Hz | 30–250 Hz | Ice quakes (high-freq component), other whale calls, biological |
+
+**Breakpoint rationale**: 15 Hz separates the dominant seismic energy from
+the mid band; 30 Hz separates the fin whale / low ice-quake regime from the
+higher biological and cryogenic signals. These are energy-regime boundaries,
+not signal-type boundaries — a single broadband ice quake may trigger in all
+three passes.
+
+No cross-pass deduplication is applied. A physical event appearing in
+multiple passes is resolved during the downstream discrimination phase.
+
+**Results** (717 files, 6 moorings):
+
+| Band | Events |
+|------|--------|
+| Low (1–15 Hz) | 84,698 |
+| Mid (15–30 Hz) | 132,494 |
+| High (30–250 Hz) | 79,978 |
+| **Total** | **297,170** |
+
+For comparison, the original 4-band approach detected 152,040 events with
+only 17,781 in the mid band — the three-pass strategy recovered 7× more
+mid-band events.
+
+Each detected event is characterized by: onset time (UTC), duration, peak
+frequency, bandwidth (90% energy), peak amplitude (relative dB), SNR
+(peak STA/LTA ratio), and detection pass. The catalogue is saved as Parquet.
+
+**Implementation**: Custom vectorized `classic_sta_lta()` using numpy
+cumulative sums.
 
 **Cross-mooring association**: Events on different moorings are associated
 using **pair-specific travel time windows** derived from in-situ XBT sound
@@ -270,13 +345,6 @@ and slightly too narrow for the most distant pair.
 | M1–M2 | 39 km | 1456 m/s | 30.7 s |
 | M3–M4 | 46 km | 1456 m/s | 36.6 s |
 | M1–M6 | 176 km | 1456 m/s | 138.8 s |
-
-Each detected event is characterized by: onset time (UTC), duration, peak
-frequency, bandwidth (90% energy), peak amplitude (relative dB), and SNR
-(peak STA/LTA ratio). The catalogue is saved as Parquet.
-
-**Implementation**: obspy `recursive_sta_lta()` (C-optimized). Numpy
-fallback available if obspy installation is problematic.
 
 ### Event Discrimination Approach (spec 002)
 
