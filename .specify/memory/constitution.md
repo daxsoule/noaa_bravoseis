@@ -346,6 +346,63 @@ and slightly too narrow for the most distant pair.
 | M3–M4 | 46 km | 1456 m/s | 36.6 s |
 | M1–M6 | 176 km | 1456 m/s | 138.8 s |
 
+### Onset Refinement (spec 001)
+
+STA/LTA onset picks are biased late — FP validation showed only 11% hit the
+true first arrival, 68% fell in the event coda. A second-pass **AIC picker**
+(Maeda 1985) with **kurtosis fallback** refines onsets for source location.
+
+**Algorithm**: For each event, extract a 7 s window (5 s pre-trigger + 2 s
+post-trigger), apply the same band-specific filter used for detection, then
+run AIC on the squared envelope. If AIC quality < 0.4, fall back to a
+kurtosis-based picker (0.5 s sliding window). If both fail, keep the original
+onset.
+
+**Constraint**: Positive shifts (refined onset later than STA/LTA trigger) are
+rejected — the STA/LTA already triggers late, so any forward shift is treated
+as a picker error. Rejected events revert to the original onset with
+downgraded quality.
+
+**Quality grading**:
+- Grade A (quality >= 0.7): high confidence — use for source location
+- Grade B (quality 0.4–0.7): moderate confidence — use for source location
+- Grade C (quality < 0.4): low confidence — **exclude from location**, retain
+  in catalogue for classification and statistical analysis
+
+**Results** (297,170 events):
+
+| Method | Events | Fraction |
+|--------|--------|----------|
+| AIC | 284,425 | 95.7% |
+| Kurtosis | 686 | 0.2% |
+| Original (kept) | 12,059 | 4.1% |
+
+| Grade | Events | Fraction |
+|-------|--------|----------|
+| A | 233,751 | 78.7% |
+| B | 51,007 | 17.2% |
+| C | 12,412 | 4.2% |
+
+Median onset shift: **−0.83 s** (IQR: [−1.46, −0.39] s). Shifts are
+consistently negative (earlier), confirming the picker moves onsets backward
+from the coda toward the true first arrival.
+
+**Known limitation**: Low-frequency events (< 5 Hz) with emergent, gradual
+onsets are poorly served by AIC, which assumes a sharp noise-to-signal
+transition. These events tend to receive grade C picks. A frequency-domain
+onset method or manual picks may be needed for this subset.
+
+**QC montage review** (50 events, overweighted grade C): 34/50 acceptable.
+Most issues were late picks on emergent low-frequency signals. The grade
+system reliably flags uncertain picks.
+
+**New catalogue columns**: `onset_utc_refined`, `onset_shift_s`,
+`onset_method` (aic/kurtosis/original), `onset_quality` (0–1),
+`onset_grade` (A/B/C).
+
+**Implementation**: `refine_onsets.py` (vectorized AIC using cumulative sums).
+QC: `validate_onsets.py`.
+
 ### Event Discrimination Approach (spec 002)
 
 Classification proceeds in **two phases**:

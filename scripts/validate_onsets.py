@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-validate_false_positives.py — Visual FP validation for detection catalogue.
+validate_onsets.py — QC montage for refined onset picks.
 
-Randomly samples 50 events (stratified by band) from the event catalogue,
-plots a 10-second spectrogram + waveform snippet centered on each event,
-and saves a montage sheet for manual inspection.
+Plots a montage of events showing both the original STA/LTA onset (dashed)
+and the refined AIC/kurtosis onset (solid) for visual validation. Sampling
+is stratified by detection band and overweights grade C events.
 
 Usage:
-    uv run python validate_false_positives.py
+    uv run python validate_onsets.py
+    uv run python validate_onsets.py --n 30
 
-Spec: specs/001-event-detection/ (Validation Approach)
+Spec: specs/001-event-detection/
 """
 
 import numpy as np
@@ -32,19 +33,45 @@ FIG_DIR = OUTPUT_DIR / "figures" / "exploratory"
 
 # === Parameters ===
 N_SAMPLES = 50
-WINDOW_SEC = 10  # seconds of context around each event
-SEED = 42
+WINDOW_SEC = 10
+SEED = 123
 NPERSEG = 256
 NOVERLAP = 192
 FREQ_MAX = 250
 
-# Layout: 10 rows × 5 columns per sheet
 NCOLS = 5
 NROWS = 10
 
+BAND_COLORS = {
+    "low": "#E69F00",
+    "mid": "#56B4E9",
+    "high": "#009E73",
+}
+
+BAND_FILTERS = {
+    "low":  {"btype": "lowpass",  "cutoff": 15},
+    "mid":  {"btype": "bandpass", "cutoff": (15, 30)},
+    "high": {"btype": "highpass", "cutoff": 30},
+}
+
+
+def band_filter(data, band, fs=SAMPLE_RATE, order=4):
+    """Apply the detection-pass filter for a given band."""
+    cfg = BAND_FILTERS[band]
+    nyq = fs / 2
+    if cfg["btype"] == "lowpass":
+        wn = min(cfg["cutoff"] / nyq, 0.999)
+    elif cfg["btype"] == "bandpass":
+        lo, hi = cfg["cutoff"]
+        wn = [max(lo / nyq, 0.001), min(hi / nyq, 0.999)]
+    elif cfg["btype"] == "highpass":
+        wn = max(cfg["cutoff"] / nyq, 0.001)
+    sos = butter(order, wn, btype=cfg["btype"], output="sos")
+    return sosfilt(sos, data)
+
 
 def load_catalogue():
-    """Load event catalogue."""
+    """Load refined event catalogue."""
     cat = pd.read_parquet(DATA_DIR / "event_catalogue.parquet")
     cat["onset_utc"] = pd.to_datetime(cat["onset_utc"])
     cat["end_utc"] = pd.to_datetime(cat["end_utc"])
@@ -54,34 +81,70 @@ def load_catalogue():
 
 
 def sample_events(cat, n=N_SAMPLES, seed=SEED):
-    """Stratified random sample by detection band."""
+    """Stratified sample overweighting grade C events.
+
+    Allocation: 50% grade C, 25% grade B, 25% grade A (within each band).
+    """
     rng = np.random.default_rng(seed)
-    bands = cat["detection_band"].unique()
+
+    if "onset_grade" not in cat.columns:
+        # No refinement columns — fall back to uniform sampling
+        idx = rng.choice(len(cat), size=min(n, len(cat)), replace=False)
+        return cat.iloc[idx].sort_values("onset_utc").reset_index(drop=True)
+
+    bands = sorted(cat["detection_band"].unique())
     per_band = max(1, n // len(bands))
 
     samples = []
-    for band in sorted(bands):
-        subset = cat[cat["detection_band"] == band]
-        k = min(per_band, len(subset))
-        idx = rng.choice(len(subset), size=k, replace=False)
-        samples.append(subset.iloc[idx])
+    for band in bands:
+        band_cat = cat[cat["detection_band"] == band]
+        if len(band_cat) == 0:
+            continue
 
-    # Fill remainder if needed
-    combined = pd.concat(samples)
-    if len(combined) < n:
-        remaining = cat.drop(combined.index)
-        extra = remaining.sample(n - len(combined), random_state=seed)
-        combined = pd.concat([combined, extra])
+        # Grade allocation targets
+        targets = {"C": int(per_band * 0.5), "B": int(per_band * 0.25)}
+        targets["A"] = per_band - targets["C"] - targets["B"]
 
-    return combined.head(n).sort_values("onset_utc").reset_index(drop=True)
+        band_samples = []
+        for grade, target in targets.items():
+            subset = band_cat[band_cat["onset_grade"] == grade]
+            k = min(target, len(subset))
+            if k > 0:
+                idx = rng.choice(len(subset), size=k, replace=False)
+                band_samples.append(subset.iloc[idx])
+
+        if band_samples:
+            combined = pd.concat(band_samples)
+            # Fill if we didn't get enough
+            if len(combined) < per_band:
+                remaining = band_cat.drop(combined.index, errors="ignore")
+                extra_n = min(per_band - len(combined), len(remaining))
+                if extra_n > 0:
+                    idx = rng.choice(len(remaining), size=extra_n, replace=False)
+                    combined = pd.concat([combined, remaining.iloc[idx]])
+            samples.append(combined)
+
+    if not samples:
+        return pd.DataFrame()
+
+    result = pd.concat(samples)
+    if len(result) < n:
+        remaining = cat.drop(result.index, errors="ignore")
+        extra_n = min(n - len(result), len(remaining))
+        if extra_n > 0:
+            idx = rng.choice(len(remaining), size=extra_n, replace=False)
+            result = pd.concat([result, remaining.iloc[idx]])
+
+    return result.head(n).sort_values("onset_utc").reset_index(drop=True)
 
 
-# Cache: mooring_key -> list of (file_ts, filepath)
+# === Data caching (same pattern as validate_false_positives.py) ===
 _file_cache = {}
+_data_cache = {}
+MAX_CACHE = 3
 
 
 def get_mooring_catalog(mooring_key):
-    """Get sorted file catalog for a mooring (cached)."""
     if mooring_key not in _file_cache:
         info = MOORINGS[mooring_key]
         mooring_dir = DATA_ROOT / info["data_dir"]
@@ -92,17 +155,10 @@ def get_mooring_catalog(mooring_key):
     return _file_cache[mooring_key]
 
 
-# Cache: filepath -> (file_ts, data)
-_data_cache = {}
-MAX_CACHE = 3  # keep at most 3 files in memory
-
-
 def get_data(filepath):
-    """Read DAT file with simple LRU cache."""
     key = str(filepath)
     if key not in _data_cache:
         if len(_data_cache) >= MAX_CACHE:
-            # Remove oldest
             oldest = next(iter(_data_cache))
             del _data_cache[oldest]
         ts, data, _ = read_dat(filepath)
@@ -111,7 +167,7 @@ def get_data(filepath):
 
 
 def extract_event_snippet(event_row):
-    """Extract waveform, filtered waveform, and spectrogram for one event."""
+    """Extract waveform and spectrogram for one event, with both onsets."""
     mooring = event_row["mooring"]
     onset = event_row["onset_utc"]
     duration = event_row["duration_s"]
@@ -122,12 +178,11 @@ def extract_event_snippet(event_row):
         and pd.notna(event_row.get("onset_utc_refined"))
     )
 
-    # Center the window on the event
-    center = onset + timedelta(seconds=duration / 2)
-    t_start = center - timedelta(seconds=WINDOW_SEC / 2)
-    t_end = center + timedelta(seconds=WINDOW_SEC / 2)
+    # Anchor window so onset is at 30% from left (ensures pick is visible)
+    pre_context = WINDOW_SEC * 0.3
+    t_start = onset - timedelta(seconds=pre_context)
+    t_end = t_start + timedelta(seconds=WINDOW_SEC)
 
-    # Find the DAT file
     catalog = get_mooring_catalog(mooring)
     for file_ts, filepath in catalog:
         file_end = file_ts + timedelta(seconds=14400)
@@ -141,10 +196,8 @@ def extract_event_snippet(event_row):
                 return None
             segment = data[start_samp:end_samp]
 
-            # Band-filtered waveform (same filter used for detection)
             filtered = band_filter(segment.astype(np.float64), band)
 
-            # Spectrogram
             freqs, times, Sxx = spectrogram(
                 segment, fs=SAMPLE_RATE, nperseg=NPERSEG, noverlap=NOVERLAP
             )
@@ -152,7 +205,6 @@ def extract_event_snippet(event_row):
             freqs = freqs[freq_mask]
             Sxx_dB = 10 * np.log10(Sxx[freq_mask, :] + 1e-20)
 
-            # Event onset/end relative to window
             ev_start = (onset - t_start).total_seconds()
             ev_end = ev_start + duration
 
@@ -178,45 +230,15 @@ def extract_event_snippet(event_row):
     return None
 
 
-BAND_COLORS = {
-    "low": "#E69F00",
-    "mid": "#56B4E9",
-    "high": "#009E73",
-}
-
-# Filter config per band (matches detect_events.py PASSES)
-BAND_FILTERS = {
-    "low":  {"btype": "lowpass",  "cutoff": 15},
-    "mid":  {"btype": "bandpass", "cutoff": (15, 30)},
-    "high": {"btype": "highpass", "cutoff": 30},
-}
-
-
-def band_filter(data, band, fs=SAMPLE_RATE, order=4):
-    """Apply the detection-pass filter for a given band."""
-    cfg = BAND_FILTERS[band]
-    nyq = fs / 2
-    if cfg["btype"] == "lowpass":
-        wn = min(cfg["cutoff"] / nyq, 0.999)
-    elif cfg["btype"] == "bandpass":
-        lo, hi = cfg["cutoff"]
-        wn = [max(lo / nyq, 0.001), min(hi / nyq, 0.999)]
-    elif cfg["btype"] == "highpass":
-        wn = max(cfg["cutoff"] / nyq, 0.001)
-    sos = butter(order, wn, btype=cfg["btype"], output='sos')
-    return sosfilt(sos, data)
-
-
 def plot_montage(events, snippets):
-    """Plot a montage sheet: spectrogram + filtered waveform per event."""
+    """Plot montage with original and refined onset picks."""
     n = len(events)
-    # Each cell has 2 sub-rows (spectrogram + waveform), so total height grows
     fig = plt.figure(figsize=(22, 38))
     outer_gs = GridSpec(NROWS, NCOLS, figure=fig,
                         hspace=0.55, wspace=0.25,
                         top=0.97, bottom=0.01, left=0.04, right=0.98)
     fig.suptitle(
-        f"False Positive Validation — {n} Random Events (seed={SEED})",
+        f"Onset Refinement QC — {n} Events (overweighted grade C, seed={SEED})",
         fontsize=16, fontweight="bold"
     )
 
@@ -224,7 +246,6 @@ def plot_montage(events, snippets):
         row, col = idx // NCOLS, idx % NCOLS
 
         if idx >= n or snippets[idx] is None:
-            # Create and hide placeholder axes
             ax_tmp = fig.add_subplot(outer_gs[row, col])
             ax_tmp.set_visible(False)
             continue
@@ -233,7 +254,6 @@ def plot_montage(events, snippets):
         snip = snippets[idx]
         color = BAND_COLORS.get(ev["detection_band"], "red")
 
-        # Split cell into spectrogram (top, 60%) and waveform (bottom, 40%)
         inner_gs = GridSpecFromSubplotSpec(
             2, 1, subplot_spec=outer_gs[row, col],
             height_ratios=[3, 2], hspace=0.08
@@ -247,27 +267,39 @@ def plot_montage(events, snippets):
         ax_spec.pcolormesh(snip["times"], snip["freqs"], snip["Sxx_dB"],
                            vmin=vmin, vmax=vmax, cmap="viridis",
                            shading="auto", rasterized=True)
+
+        # Original onset (dashed)
         ax_spec.axvline(snip["ev_start"], color=color, linewidth=1.0,
+                        linestyle="--", alpha=0.7, label="original")
+        ax_wave.axvline(snip["ev_start"], color=color, linewidth=1.0,
                         linestyle="--", alpha=0.7)
-        if snip.get("refined_start") is not None:
-            ax_spec.axvline(snip["refined_start"], color=color,
-                            linewidth=1.8, alpha=0.95)
-        ax_spec.axvline(snip["ev_end"], color=color, linewidth=1.0,
-                        linestyle="--", alpha=0.7)
+
+        # Refined onset (solid)
+        if snip["refined_start"] is not None:
+            ax_spec.axvline(snip["refined_start"], color=color, linewidth=1.8,
+                            alpha=0.95, label="refined")
+            ax_wave.axvline(snip["refined_start"], color=color, linewidth=1.8,
+                            alpha=0.95)
+
+        # Event end
+        ax_spec.axvline(snip["ev_end"], color="gray", linewidth=0.8,
+                        linestyle=":", alpha=0.5)
+
         ax_spec.set_ylim(0, FREQ_MAX)
         ax_spec.tick_params(labelsize=5)
         plt.setp(ax_spec.get_xticklabels(), visible=False)
 
-        # Title on spectrogram
+        # Title
         band = ev["detection_band"]
-        snr = ev["snr"]
-        pf = ev["peak_freq_hz"]
-        dur = ev["duration_s"]
         mooring = ev["mooring"].upper()
         time_str = ev["onset_utc"].strftime("%m-%d %H:%M:%S")
+        method = ev.get("onset_method", "?")
+        quality = ev.get("onset_quality", 0)
+        grade = ev.get("onset_grade", "?")
+        shift = ev.get("onset_shift_s", 0)
         ax_spec.set_title(
-            f"#{idx+1} {mooring} {band} SNR={snr:.1f}\n"
-            f"{time_str} {pf:.0f}Hz {dur:.1f}s",
+            f"#{idx+1} {mooring} {band} [{method}/{grade}] q={quality:.2f}\n"
+            f"{time_str} shift={shift:+.3f}s",
             fontsize=6.5, fontweight="bold", pad=2
         )
 
@@ -279,13 +311,6 @@ def plot_montage(events, snippets):
         # --- Filtered waveform ---
         ax_wave.plot(snip["time_s"], snip["filtered"],
                      color="0.3", linewidth=0.3, rasterized=True)
-        ax_wave.axvline(snip["ev_start"], color=color, linewidth=1.0,
-                        linestyle="--", alpha=0.7)
-        if snip.get("refined_start") is not None:
-            ax_wave.axvline(snip["refined_start"], color=color,
-                            linewidth=1.8, alpha=0.95)
-        ax_wave.axvline(snip["ev_end"], color=color, linewidth=1.0,
-                        linestyle="--", alpha=0.7)
         ax_wave.tick_params(labelsize=5)
 
         if row == NROWS - 1:
@@ -297,7 +322,7 @@ def plot_montage(events, snippets):
         else:
             ax_wave.set_yticklabels([])
 
-    outpath = FIG_DIR / "fp_validation_montage.png"
+    outpath = FIG_DIR / "onset_refinement_montage.png"
     fig.savefig(outpath, dpi=200, facecolor="white")
     plt.close(fig)
     print(f"Saved: {outpath}")
@@ -305,8 +330,15 @@ def plot_montage(events, snippets):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="QC montage for refined onset picks")
+    parser.add_argument("--n", type=int, default=N_SAMPLES,
+                        help=f"Number of events to sample (default: {N_SAMPLES})")
+    args = parser.parse_args()
+
     print("=" * 60)
-    print("False Positive Validation")
+    print("Onset Refinement QC Montage")
     print("=" * 60)
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -314,8 +346,15 @@ def main():
     cat = load_catalogue()
     print(f"Loaded {len(cat):,} events")
 
-    events = sample_events(cat)
-    print(f"Sampled {len(events)} events (stratified by band):")
+    has_refined = "onset_utc_refined" in cat.columns
+    if not has_refined:
+        print("WARNING: No refined onset columns found. Run refine_onsets.py first.")
+        print("Showing original onsets only.")
+
+    events = sample_events(cat, n=args.n)
+    print(f"Sampled {len(events)} events:")
+    if has_refined and "onset_grade" in events.columns:
+        print(events["onset_grade"].value_counts().to_string())
     print(events["detection_band"].value_counts().to_string())
     print()
 
@@ -333,17 +372,14 @@ def main():
     n_ok = sum(1 for s in snippets if s is not None)
     print(f"\n{n_ok}/{len(events)} snippets extracted successfully")
 
-    # Plot
     print("\nGenerating montage...")
     plot_montage(events, snippets)
 
-    # Save event list for reference
-    ref_path = FIG_DIR / "fp_validation_events.csv"
+    ref_path = FIG_DIR / "onset_refinement_events.csv"
     events.to_csv(ref_path, index=False)
     print(f"Saved event list: {ref_path}")
 
-    print("\nDone. Inspect the montage and mark false positives.")
-    print("Target: < 20% false positive rate (< 10 of 50).")
+    print("\nDone. Inspect the montage to verify refined picks.")
 
 
 if __name__ == "__main__":
