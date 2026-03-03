@@ -95,14 +95,28 @@ Multibeam bathymetry collected during the BRAVOSEIS cruise.
 - **Coverage**: Bransfield Strait regional
 - **Coordinate system**: WGS84 geographic (lon/lat)
 
-### 3. Sound Speed Profiles
+### 3. Sound Speed Profiles (XBT)
 
-Travel times and velocities determined by applying propagation models to the
-U.S. Navy ocean sound speed database (Dziak et al., 2010). The Bransfield
-Strait sound velocity profile is surface-limited: velocity decreases linearly
-from the seafloor to the sea surface, causing acoustic phases to refract
-upward and reflect off the sea-surface-air interface before propagating
-laterally through the basin.
+In-situ expendable bathythermograph (XBT) profiles collected during the
+BRAVOSEIS deployment cruise (January 2019). These provide direct measurements
+of the sound speed structure through which hydroacoustic signals propagate
+between moorings.
+
+- **Local path**: `/home/jovyan/my_data/bravoseis/XBT/XBT/`
+- **Format**: `.asvp` files (3 variants: CSV, SVP_VERSION_2, SoundVelocity)
+- **Profiles**: 11 files, depths from surface to 1022–1425 m
+- **Primary profile**: `T5_18_01_19.asvp` — 1563 points, 0–1022 m,
+  62.7°S 59.15°W (mid-array, between M1 and M2). Deepest clean profile.
+- **Sound speed range**: ~1453 m/s at surface → ~1481 m/s at 1022 m
+- **Profile shape**: Surface-limited — speed increases monotonically with
+  depth (no SOFAR channel). Acoustic phases refract upward and reflect off
+  the sea surface before propagating laterally.
+- **Effective horizontal speed**: ~1456 m/s (harmonic mean, 0–450 m
+  hydrophone depth). Significantly lower than the 1480 m/s commonly assumed.
+- **Processing script**: `compute_travel_times.py`
+- **Output**: `outputs/data/travel_times.json`
+- **Previous reference**: Dziak et al. (2010) — U.S. Navy sound speed database.
+  The in-situ XBT profiles supersede this climatological estimate.
 
 ## Technical Environment
 
@@ -237,9 +251,25 @@ acoustic data. Detection runs independently in **4 frequency bands**:
 - Min event duration: 0.5 s, Min inter-event gap: 2.0 s
 - Bandpass: 4th-order Butterworth, applied before STA/LTA
 
-**Cross-mooring association**: Events on different moorings within **200 s**
-of each other are candidate associations (based on ~1480 m/s sound speed
-and ~300 km max mooring separation).
+**Cross-mooring association**: Events on different moorings are associated
+using **pair-specific travel time windows** derived from in-situ XBT sound
+speed profiles (`compute_travel_times.py`). Effective horizontal speed is
+computed as the harmonic mean of the sound speed profile from the surface to
+the deeper hydrophone of each pair:
+
+    c_eff = z_max / ∫(1/c(z) dz, 0, z_max)
+
+A **15% safety factor** is applied. Resulting windows range from **21 s**
+(M4–M5, 27 km) to **139 s** (M1–M6, 176 km). This replaces the previous
+constant 120 s / 1480 m/s assumption, which was 6× too wide for close pairs
+and slightly too narrow for the most distant pair.
+
+| Pair | Distance | c_eff | Max window |
+|------|----------|-------|------------|
+| M4–M5 | 27 km | 1456 m/s | 21.2 s |
+| M1–M2 | 39 km | 1456 m/s | 30.7 s |
+| M3–M4 | 46 km | 1456 m/s | 36.6 s |
+| M1–M6 | 176 km | 1456 m/s | 138.8 s |
 
 Each detected event is characterized by: onset time (UTC), duration, peak
 frequency, bandwidth (90% energy), peak amplitude (relative dB), and SNR
