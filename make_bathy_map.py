@@ -31,7 +31,7 @@ BATHY_REGIONAL_PATH = Path(
 BATHY_ORCA_PATH = Path(
     "/home/jovyan/my_data/bravoseis/bathymetry/MGDS_Download/BRAVOSEIS/Orca_bathymetry.nc"
 )
-OUTPUT_DIR = Path(__file__).parent / "outputs" / "figures" / "journal"
+OUTPUT_DIR = Path(__file__).parent / "outputs" / "figures" / "exploratory"
 
 # === Font sizes (Paper tier: title >= 14pt, axis/caption >= 10pt,
 #     feature labels >= 8pt, min DPI 300) ===

@@ -189,6 +189,108 @@ a Temp Caption so the context is never lost.
 - **Thresholds**: To be refined as analysis progresses. Document each
   threshold decision in the relevant spec when it is determined.
 
+## Methods Notes
+
+Key observations and derived quantities useful for the methods section of the
+paper. Each entry is confirmed from data inspection or figure generation.
+
+### Recording Duty Cycle
+
+The hydrophones operated on a duty cycle of approximately **8 hours of
+recording followed by ~40 hours off**, repeating every ~2 days. This yields
+roughly **5% temporal coverage** over each mooring's 13-month deployment.
+Each recording window consists of **two consecutive 4-hour DAT files**.
+
+The recording start time **drifts slowly across the deployment** — it is not
+locked to a fixed UTC hour. This is visible in the recording timeline figure
+(`recording_timeline.png`), where the bars shift gradually over the 13-month
+span.
+
+Across all 6 moorings, a total of **717 DAT files** were recorded
+(104–125 per mooring). M3 (BRA30/H13) has the fewest files (104), while
+M5 (BRA32/H24) has the most (125). M3's last recorded file extends to
+2020-02-22, slightly past the other moorings' final recordings on 2020-02-19.
+
+**Implication for analysis**: The ~5% duty cycle means transient events
+(earthquakes, ice quakes) may be missed if they occur during off periods.
+However, the duty cycle is sufficient for statistical characterization of
+event rates and spectral properties over weeks-to-months timescales.
+Cross-mooring detections are possible only when recording windows overlap,
+which they typically do since all moorings follow a similar schedule.
+
+### Event Detection Approach (spec 001)
+
+Events are detected using an **STA/LTA (Short-Term Average / Long-Term
+Average) energy detector** — the standard first-pass method for seismo-
+acoustic data. Detection runs independently in **4 frequency bands**:
+
+| Band | Range | Target signals |
+|------|-------|----------------|
+| Low | 1–50 Hz | Earthquakes, T-phases |
+| Mid | 10–200 Hz | Ice quakes |
+| High | 50–250 Hz | Biological (whale calls) |
+| Broadband | 1–250 Hz | All signal types |
+
+**Starting STA/LTA parameters** (subject to tuning):
+- STA window: 2 s, LTA window: 60 s
+- Trigger: STA/LTA >= 3.0, Detrigger: STA/LTA <= 1.5
+- Min event duration: 0.5 s, Min inter-event gap: 2.0 s
+- Bandpass: 4th-order Butterworth, applied before STA/LTA
+
+**Cross-mooring association**: Events on different moorings within **200 s**
+of each other are candidate associations (based on ~1480 m/s sound speed
+and ~300 km max mooring separation).
+
+Each detected event is characterized by: onset time (UTC), duration, peak
+frequency, bandwidth (90% energy), peak amplitude (relative dB), and SNR
+(peak STA/LTA ratio). The catalogue is saved as Parquet.
+
+**Implementation**: obspy `recursive_sta_lta()` (C-optimized). Numpy
+fallback available if obspy installation is problematic.
+
+### Event Discrimination Approach (spec 002)
+
+Classification proceeds in **two phases**:
+
+**Phase 1 — Unsupervised Discovery**: Extract ~20 handcrafted spectral
+features per event (band powers, duration, rise/decay time, peak frequency,
+bandwidth, spectral slope, frequency modulation). Project into 2D via
+**UMAP** and cluster with **HDBSCAN** to discover natural signal groupings
+without imposing predefined categories. Clusters are visually inspected via
+spectrogram montages and labeled by a single reviewer into broad classes
+(earthquake, ice_quake, whale_call, noise, unknown) and subclasses where
+the data supports it. Minimum class size: **100 events**.
+
+**Gate**: Phase 1 deliverables (UMAP plot, montages, labeled dataset) must
+be reviewed and approved before Phase 2 begins.
+
+**Phase 2 — Supervised CNN**: Train a lightweight convolutional neural
+network (~100K–500K parameters, 3–4 conv blocks) on labeled spectrogram
+patches using PyTorch on GPU. Weighted cross-entropy loss, AdamW optimizer,
+early stopping. Target: **>=80% macro F1** on broad classes. Apply to full
+catalogue with confidence scores.
+
+**Future extension**: Convolutional autoencoder for learned feature
+extraction, potentially improving separation of ambiguous event types.
+Deferred until handcrafted features are validated.
+
+### Array Spectrograms
+
+Ten-minute spectrogram arrays across all 6 moorings enable visual
+identification of signals propagating across the network. Three reference
+windows are generated (`make_spectrogram.py`):
+
+| Window | UTC start | DAT file | Moorings | Notes |
+|--------|-----------|----------|----------|-------|
+| 1 | 2019-08-14 17:38 | 00001282 | M1,M2,M4,M5,M6 | M3 off-duty |
+| 2 | 2019-08-14 21:16 | 00001283 | M1,M2,M4,M5,M6 | M3 off-duty |
+| 3 | 2020-01-09 06:24 | 00002166 | All 6 | All moorings recording |
+
+Spectrogram parameters: `nperseg=1024` (1.024 s), 50% overlap, fs=1000 Hz,
+0–250 Hz display range. Shared colorscale (2nd–98th percentile) across all
+panels per figure. These windows serve as the **tuning reference** for
+STA/LTA parameter calibration.
+
 ## Project Notes
 
 - **International collaboration**: Spain, Germany, and United States.
