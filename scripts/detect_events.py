@@ -73,7 +73,7 @@ def trigger_onset(cft, threshold_on, threshold_off):
 
 # === Paths ===
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
-OUTPUT_DIR = Path(__file__).parent / "outputs" / "data"
+OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "data"
 
 # === Detection parameters (from plan R2) ===
 STA_SEC = 2.0       # Short-term average window (seconds)

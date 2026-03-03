@@ -24,7 +24,7 @@ from datetime import timedelta
 from read_dat import MOORINGS
 
 # === Paths ===
-OUTPUT_DIR = Path(__file__).parent / "outputs"
+OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 DATA_DIR = OUTPUT_DIR / "data"
 TABLE_DIR = OUTPUT_DIR / "tables"
 

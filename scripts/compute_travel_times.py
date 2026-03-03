@@ -29,7 +29,7 @@ from read_dat import MOORINGS
 
 # === Paths ===
 XBT_DIR = Path("/home/jovyan/my_data/bravoseis/XBT/XBT")
-OUTPUT_DIR = Path(__file__).parent / "outputs"
+OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 DATA_DIR = OUTPUT_DIR / "data"
 FIG_DIR = OUTPUT_DIR / "figures" / "exploratory"
 
