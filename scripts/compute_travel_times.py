@@ -12,7 +12,7 @@ Usage:
 
 Outputs:
     outputs/data/travel_times.json
-    outputs/figures/exploratory/sound_speed_profile.png
+    outputs/figures/exploratory/association/sound_speed_profile.png
 
 Spec: specs/001-event-detection/
 """
@@ -31,7 +31,7 @@ from read_dat import MOORINGS
 XBT_DIR = Path("/home/jovyan/my_data/bravoseis/XBT/XBT")
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 DATA_DIR = OUTPUT_DIR / "data"
-FIG_DIR = OUTPUT_DIR / "figures" / "exploratory"
+FIG_DIR = OUTPUT_DIR / "figures" / "exploratory" / "association"
 
 # === Parameters ===
 SAFETY_FACTOR = 1.15  # 15% safety margin on travel times

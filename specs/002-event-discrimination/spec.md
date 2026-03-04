@@ -87,13 +87,24 @@ This yields a feature vector of ~20 dimensions per event.
 
 #### 1b. Dimensionality reduction and clustering
 
-- Standardize features (zero mean, unit variance)
+Clustering is performed **independently for each detection band** (low
+<15 Hz, mid 15–30 Hz, high >30 Hz). This decision follows from an initial
+all-band clustering pass that produced a single mega-cluster (99% of
+events) whose UMAP embedding was organized primarily by detection band
+rather than by signal type. Per-band clustering removes this dominant
+frequency-regime axis and exposes subtler within-band structure.
+
+For each band:
+- Standardize features (zero mean, unit variance), fitted per band
 - Apply UMAP (n_neighbors=15, min_dist=0.1, n_components=2) to project
   into 2D for visualization
 - Apply HDBSCAN on the UMAP embedding to identify clusters
   (min_cluster_size to be tuned empirically, starting at 50)
-- Produce a 2D scatter plot colored by cluster assignment — this is the
-  primary discovery figure
+- Produce a 2D scatter plot colored by cluster assignment
+
+This yields three independent UMAP embeddings and cluster sets. Cluster
+IDs are band-prefixed (e.g., low_0, mid_3, high_7) to avoid collision
+when merging into the final labeling step.
 
 #### 1c. Cluster interpretation and labeling
 

@@ -409,12 +409,31 @@ Classification proceeds in **two phases**:
 
 **Phase 1 — Unsupervised Discovery**: Extract ~20 handcrafted spectral
 features per event (band powers, duration, rise/decay time, peak frequency,
-bandwidth, spectral slope, frequency modulation). Project into 2D via
-**UMAP** and cluster with **HDBSCAN** to discover natural signal groupings
-without imposing predefined categories. Clusters are visually inspected via
-spectrogram montages and labeled by a single reviewer into broad classes
-(earthquake, ice_quake, whale_call, noise, unknown) and subclasses where
-the data supports it. Minimum class size: **100 events**.
+bandwidth, spectral slope, frequency modulation). Cluster **each detection
+band independently** (low <15 Hz, mid 15–30 Hz, high >30 Hz) using UMAP
+projection into 2D followed by HDBSCAN clustering. Clusters are visually
+inspected via spectrogram montages and labeled by a single reviewer into
+broad classes (earthquake, ice_quake, whale_call, noise, unknown) and
+subclasses where the data supports it. Minimum class size: **100 events**.
+
+**Per-band clustering rationale**: An initial all-band clustering pass
+(297,170 events, 19 features, UMAP + HDBSCAN) produced a single
+mega-cluster containing 99% of events. Visual inspection of the UMAP
+embedding revealed clear internal structure (arms, ridges, density
+gradients) organized primarily by detection band — low-band events
+dominated the left side, mid-band the center, and high-band the right.
+Feature-colored maps confirmed strong frequency-driven gradients (peak
+frequency, spectral centroid, spectral slope) as the dominant axes of
+variation. The 11 splinter clusters (totaling <1% of events) contained
+recognizable signals — fin whale 20 Hz calls, tonal high-frequency whale
+calls, T-phases, broadband impulsive events — but were scattered across
+clusters by outlier status rather than grouped by signal type.
+
+Clustering per band removes the dominant frequency-regime axis (which is
+already known from detection) and allows subtler within-band structure to
+emerge: T-phases vs. local earthquakes in the low band, fin whale pulse
+trains vs. background in the mid band, tonal whale calls vs. ice cracking
+in the high band.
 
 **Gate**: Phase 1 deliverables (UMAP plot, montages, labeled dataset) must
 be reviewed and approved before Phase 2 begins.

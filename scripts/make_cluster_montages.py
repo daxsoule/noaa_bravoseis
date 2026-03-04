@@ -30,7 +30,7 @@ from read_dat import read_dat, MOORINGS, SAMPLE_RATE
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 DATA_DIR = OUTPUT_DIR / "data"
-FIG_DIR = OUTPUT_DIR / "figures" / "journal"
+FIG_DIR = OUTPUT_DIR / "figures" / "exploratory" / "clustering"
 PATCH_DIR = DATA_DIR / "event_patches"
 
 # === Parameters ===
@@ -193,7 +193,7 @@ def plot_cluster_montage(cluster_id, events, snippets, cluster_size):
         else:
             ax.set_xticklabels([])
 
-    outpath = FIG_DIR / f"cluster_montage_{cluster_id:03d}.png"
+    outpath = FIG_DIR / f"cluster_montage_{cluster_id}.png"
     fig.savefig(outpath, dpi=200, facecolor="white")
     plt.close(fig)
     return outpath
@@ -216,22 +216,25 @@ def main():
     df = load_data()
     print(f"Loaded {len(df):,} clustered events")
 
-    # Get unique clusters (excluding noise = -1)
-    cluster_ids = sorted(df[df["cluster_id"] >= 0]["cluster_id"].unique())
-    print(f"Clusters to visualize: {len(cluster_ids)}")
+    # Get unique clusters — handle both string (per-band) and numeric IDs
+    all_cluster_ids = sorted(df["cluster_id"].unique(), key=str)
 
-    # Also make a noise montage
-    noise_df = df[df["cluster_id"] == -1]
-    if len(noise_df) > 0:
-        cluster_ids = [-1] + cluster_ids
+    # Separate noise clusters from real clusters
+    noise_ids = [cid for cid in all_cluster_ids
+                 if str(cid).endswith("_noise") or cid == -1]
+    real_ids = [cid for cid in all_cluster_ids if cid not in noise_ids]
+
+    cluster_ids = noise_ids + real_ids
+    print(f"Clusters to visualize: {len(cluster_ids)}")
 
     for cid in cluster_ids:
         cluster_df = df[df["cluster_id"] == cid]
         cluster_size = len(cluster_df)
-        label = f"noise (id=-1)" if cid == -1 else f"cluster {cid}"
+        is_noise = str(cid).endswith("_noise") or cid == -1
+        label = f"noise ({cid})" if is_noise else f"cluster {cid}"
 
         # Select representative events
-        if cid == -1:
+        if is_noise:
             # Random sample for noise
             rng = np.random.default_rng(42)
             n = min(args.n_per_cluster, len(cluster_df))
@@ -260,10 +263,9 @@ def main():
     # Summary table
     print(f"\n{'=' * 60}")
     print("Cluster summary:")
-    for cid in sorted(df["cluster_id"].unique()):
+    for cid in cluster_ids:
         n = (df["cluster_id"] == cid).sum()
-        label = "noise" if cid == -1 else f"C{cid}"
-        print(f"  {label:8s}: {n:6,}")
+        print(f"  {str(cid):16s}: {n:6,}")
 
     print(f"\nDone. Review montages and create "
           f"outputs/data/cluster_labels.json")

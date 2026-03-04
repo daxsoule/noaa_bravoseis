@@ -23,7 +23,7 @@ from make_bathy_map import add_caption_justified
 
 # === Paths ===
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
-OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "figures" / "exploratory"
+OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "figures" / "exploratory" / "spectrograms"
 
 # === Font sizes (Paper tier) ===
 FS_TITLE = 14

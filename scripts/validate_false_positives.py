@@ -28,7 +28,7 @@ from read_dat import read_dat, list_mooring_files, MOORINGS, SAMPLE_RATE
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 DATA_DIR = OUTPUT_DIR / "data"
-FIG_DIR = OUTPUT_DIR / "figures" / "exploratory"
+FIG_DIR = OUTPUT_DIR / "figures" / "exploratory" / "validation"
 
 # === Parameters ===
 N_SAMPLES = 50

@@ -74,12 +74,20 @@ outputs/
 │   ├── labeled_events.parquet       # Cluster labels + broad/subclass
 │   ├── classified_catalogue.parquet # Final CNN predictions
 │   └── cluster_labels.json          # Cluster → class mapping
-├── figures/journal/
-│   ├── umap_cluster_map.png
-│   ├── umap_feature_maps.png        # UMAP colored by individual features
-│   ├── cluster_montage_*.png        # One per cluster
-│   ├── classified_event_timeline.png
-│   └── confusion_matrix.png
+├── figures/exploratory/
+│   ├── maps/                        # Bathymetry, station maps
+│   ├── spectrograms/                # Array spectrograms, example windows
+│   ├── detection/                   # STA/LTA examples, QC, rates, distributions
+│   ├── validation/                  # False positive analysis
+│   ├── onsets/                      # Onset refinement QC
+│   ├── association/                 # Cross-mooring stats, travel times
+│   └── clustering/                  # UMAP, montages, feature maps
+│       ├── umap_cluster_map.png
+│       ├── umap_feature_maps.png
+│       ├── cluster_montage_*.png
+│       ├── classified_event_timeline.png
+│       └── confusion_matrix.png
+├── figures/journal/                 # Promoted publication-quality figures only
 ├── models/
 │   ├── classifier.pt                # Trained CNN weights
 │   └── training_log.json            # Loss/metrics per epoch
@@ -123,21 +131,28 @@ keep raw data immutable.
 - **Notes**: Process DAT files sequentially to limit memory. Group events
   by file number to avoid re-reading the same file.
 
-### Stage 2: Clustering (`cluster_events.py`)
+### Stage 2: Per-Band Clustering (`cluster_events.py`)
 
 - **Input**: `outputs/data/event_features.parquet`
-- **Processing**:
-  1. Standardize features (zero mean, unit variance)
-  2. UMAP projection (n_neighbors=15, min_dist=0.1, n_components=2)
-  3. HDBSCAN clustering (min_cluster_size=50, tuned empirically)
-  4. Stability analysis: rerun 5× with different random seeds
-  5. Compute silhouette score
-  6. Generate UMAP scatter plot colored by cluster
-  7. Generate UMAP plots colored by individual features
+- **Processing** (repeated independently for each detection band: low, mid, high):
+  1. Filter events to the target band
+  2. Standardize features (zero mean, unit variance), fitted per band
+  3. UMAP projection (n_neighbors=15, min_dist=0.1, n_components=2)
+  4. HDBSCAN clustering (min_cluster_size=50, tuned empirically)
+  5. Stability analysis: rerun 5× with different random seeds
+  6. Compute silhouette score
+  7. Generate UMAP scatter plot colored by cluster
+  8. Generate UMAP plots colored by individual features
+  9. Prefix cluster IDs by band (e.g., low_0, mid_3, high_7)
+- **Rationale**: Initial all-band clustering produced a single mega-cluster
+  (99% of events) organized primarily by detection band in UMAP space.
+  Per-band clustering removes this dominant axis and exposes within-band
+  structure (e.g., T-phases vs. local earthquakes in the low band, fin
+  whale calls vs. background in mid band).
 - **Output**:
-  - `outputs/data/umap_coordinates.parquet`
-  - `outputs/figures/journal/umap_cluster_map.png`
-  - `outputs/figures/journal/umap_feature_maps.png`
+  - `outputs/data/umap_coordinates.parquet` (all bands, with band-prefixed cluster IDs)
+  - `outputs/figures/exploratory/clustering/umap_{band}_cluster_map.png` (one per band)
+  - `outputs/figures/exploratory/clustering/umap_{band}_feature_maps.png` (one per band)
   - Cluster statistics printed to stdout
 
 ### Stage 3: Cluster Visualization (`make_cluster_montages.py`)
@@ -148,7 +163,7 @@ keep raw data immutable.
   2. Load their spectrogram patches
   3. Arrange in a 4×5 grid with cluster ID, size, and mean features
   4. Add justified caption per montage
-- **Output**: `outputs/figures/journal/cluster_montage_*.png`
+- **Output**: `outputs/figures/exploratory/clustering/cluster_montage_*.png`
 
 ### Stage 4: Labeling (`label_clusters.py`)
 
@@ -186,7 +201,7 @@ requests iteration before proceeding to Phase 2.
 - **Output**:
   - `outputs/models/classifier.pt`
   - `outputs/models/training_log.json`
-  - `outputs/figures/journal/confusion_matrix.png`
+  - `outputs/figures/exploratory/clustering/confusion_matrix.png`
   - `outputs/tables/cnn_performance.csv`
 
 ### Stage 6: Full Catalogue Classification (`classify_catalogue.py`)
@@ -201,7 +216,7 @@ requests iteration before proceeding to Phase 2.
   6. Compute seasonal event rates table
 - **Output**:
   - `outputs/data/classified_catalogue.parquet`
-  - `outputs/figures/journal/classified_event_timeline.png`
+  - `outputs/figures/exploratory/clustering/classified_event_timeline.png`
   - `outputs/tables/seasonal_event_rates.csv`
 
 ## Script Plan
