@@ -262,33 +262,139 @@ spectrograms (top) and band-filtered waveforms (bottom) for each. Vertical
 lines mark event onset (solid) and end (dashed), colored by detection band
 (orange: low, blue: mid, green: high).](figures/exploratory/fp_validation_montage.png){width=100%}
 
-**Preliminary observations:** Manual inspection of the first several
-events reveals a systematic onset-timing issue. In multiple cases, the
-STA/LTA trigger fires on a **coda or multipath arrival** rather than the
-initial event onset. The true first arrival is visible in the spectrogram
-and filtered waveform before the pick, but the strong initial energy
-floods the 60 s LTA window, suppressing the STA/LTA ratio during the
-actual onset. By the time the ratio exceeds 3.0, the detector picks a
-later arrival.
+**Results:** Of 50 events reviewed, 46 (92%) were judged to be true
+positive detections and 4 (8%) were false positives — well below the
+20% FP threshold. However, a systematic onset-timing issue was identified:
+only 11% of picks landed on the true first arrival, 68% fell in the event
+coda, and 8% landed at peak energy. This motivated the onset refinement
+step described below.
 
-This is a known limitation of STA/LTA detectors with long LTA windows
-when applied to emergent-onset or multipath-rich signals. Potential
-mitigations include:
+# 8. Onset Refinement
 
-- An **onset refinement** step (e.g., AIC or kurtosis picker) applied
-  within a window around each STA/LTA trigger
-- **Shorter LTA** windows (trading sensitivity for onset accuracy)
-- **Pre-trigger padding** to search backward from each trigger for the
-  true first break
+## 8.1 Motivation
 
-Full FP rate quantification is pending completion of the 50-event review.
+STA/LTA onset picks are biased late. The 60 s LTA window becomes
+contaminated by early event energy, suppressing the STA/LTA ratio during
+the true onset. By the time the ratio exceeds 3.0, the pick lands in
+the coda rather than at the first arrival. Since source location requires
+accurate first-arrival times, a second-pass refinement is needed.
 
-# 8. Open Questions
+## 8.2 AIC Picker with Kurtosis Fallback
 
-1. **Onset timing accuracy**: STA/LTA triggers appear to land on coda or
-   multipath arrivals rather than true first arrivals in some cases (see
-   Section 7). An onset refinement step is needed before the catalogue
-   can be used for source location.
+For each event, the onset is refined using an **Akaike Information
+Criterion (AIC) picker** (Maeda, 1985) with a **kurtosis-based fallback**:
+
+1. Extract a 7 s window: 5 s before the STA/LTA trigger + 2 s after
+2. Apply the same band-specific filter used for detection
+3. Pad 1 s on each side to mitigate filter edge effects, then trim
+4. Compute the squared envelope
+5. Run the AIC picker — fits a two-segment noise/signal variance model
+   and finds the minimum AIC as the onset estimate
+6. If AIC quality < 0.4, fall back to a kurtosis picker (0.5 s sliding
+   window) that detects the first statistical departure from Gaussian noise
+7. If both fail, keep the original onset with low confidence
+
+**Decision: Reject positive shifts.** Any refined onset that falls *after*
+the original STA/LTA trigger is rejected and reverted to the original. The
+STA/LTA already triggers late, so a forward shift indicates a picker error
+(typically the AIC latching onto a noise variance change rather than the
+true signal onset). Rejected events receive downgraded quality scores.
+
+**Decision: AIC quality threshold = 0.4.** Initial threshold of 0.3 allowed
+marginal picks that visual inspection showed were not true onsets. Raising
+to 0.4 eliminated these while retaining 95.7% of picks.
+
+## 8.3 Quality Grading
+
+Each refined onset receives a quality score (0–1) based on the sharpness
+of the AIC trough, mapped to letter grades:
+
+| Grade | Quality Range | Use | Events | Fraction |
+|-------|--------------|-----|--------|----------|
+| A | ≥ 0.7 | Source location | 233,751 | 78.7% |
+| B | 0.4–0.7 | Source location | 51,007 | 17.2% |
+| C | < 0.4 | **Exclude from location** | 12,412 | 4.2% |
+
+: **Table 7.** Onset quality grading. Grade A/B events (95.8%) are used for
+source location; grade C events are retained for classification and
+statistical analysis but excluded from travel-time-based location.
+
+## 8.4 Results
+
+| Method | Events | Fraction |
+|--------|--------|----------|
+| AIC | 284,425 | 95.7% |
+| Kurtosis | 686 | 0.2% |
+| Original (kept) | 12,059 | 4.1% |
+
+: **Table 8.** Onset refinement method distribution.
+
+Median onset shift: **−0.83 s** (IQR: [−1.46, −0.39] s). Shifts are
+consistently negative (earlier), confirming the picker moves onsets
+backward from the coda toward the true first arrival.
+
+![Onset shift histogram by detection band. Most shifts are between −0.5
+and −3 s, consistent with correcting coda picks to first arrivals. The
+red line indicates the median shift for refined events in each
+band.](figures/exploratory/onset_shift_histogram.png){width=100%}
+
+## 8.5 QC Validation
+
+A montage of 50 events (overweighted toward grade C: 24 C, 14 B, 12 A)
+was visually inspected. Of 50 events, 34 (68%) had acceptable refined
+picks. Most issues were late picks on emergent low-frequency signals
+(< 5 Hz) where the AIC assumption of a sharp noise-to-signal transition
+breaks down.
+
+![Onset refinement QC montage — 50 events showing original STA/LTA onset
+(dashed line) and refined AIC/kurtosis onset (solid line). Titles show
+method, grade, quality score, and shift
+amount.](figures/exploratory/onset_refinement_montage.png){width=100%}
+
+**Known limitation:** Low-frequency events (< 5 Hz) with emergent, gradual
+onsets are poorly served by the AIC picker. These events tend to receive
+grade C picks. A frequency-domain onset method or manual picks may be
+needed for this subset.
+
+# 9. Event Discrimination (In Progress)
+
+## 9.1 Approach
+
+Classification proceeds in two phases:
+
+1. **Phase 1 — Unsupervised Discovery**: Extract handcrafted spectral
+   features, project to 2D with UMAP, cluster with HDBSCAN
+2. **Phase 2 — Supervised CNN**: Train a lightweight CNN on spectrogram
+   patches using Phase 1 labels (gated on Phase 1 review)
+
+## 9.2 Feature Extraction
+
+For each of the 297,170 events, 19 spectral features were extracted from
+spectrogram patches (nperseg=1024, noverlap=512, 0–250 Hz):
+
+- 10 band powers (25 Hz bands: 0–25, 25–50, ..., 225–250 Hz)
+- Peak frequency, peak power (dB), bandwidth (90% energy)
+- Duration, rise time, decay time
+- Spectral slope, frequency modulation, spectral centroid
+
+All 297,170 events yielded complete feature vectors (100%).
+
+## 9.3 Clustering (Preliminary)
+
+UMAP (n_neighbors=15, min_dist=0.1) + HDBSCAN (min_cluster_size=50)
+identified 12 clusters, but with a highly skewed distribution: cluster 8
+contains 294,399 events (99.1%) while the 11 remaining clusters range
+from 51 to 642 events. Silhouette score = 0.259.
+
+This indicates the handcrafted features do not adequately separate the
+main signal types in the current form. Options under evaluation include:
+improving the feature set, clustering by detection band separately, or
+proceeding directly to CNN classification on spectrogram patches.
+
+# 10. Open Questions
+
+1. **Clustering**: The mega-cluster problem (Section 9.3) needs resolution
+   before Phase 1 labeling can proceed meaningfully.
 
 2. **Multipath**: No explicit multipath handling is implemented. Strong
    bottom/surface reflections arriving >2 s after the direct path may
@@ -296,15 +402,9 @@ Full FP rate quantification is pending completion of the 50-event review.
 
 3. **Cross-mooring association**: The association step has not yet been
    re-run on the three-pass catalogue (297k events). The increased event
-   density may increase coincidental associations.
+   density may increase coincidental associations. Event discrimination
+   should precede association to reduce false associations.
 
 4. **Duplicate resolution**: Events appearing in multiple passes (e.g., a
    broadband ice quake triggering all three) need to be reconciled during
    the discrimination phase.
-
-5. **Per-pass threshold tuning**: The current trigger=3.0 was chosen for
-   the original broadband detection. Each pass's noise characteristics
-   differ and may benefit from pass-specific thresholds.
-
-6. **Summary figures**: The detection rate timeline, duration vs. frequency,
-   and cross-mooring figures need regeneration from the three-pass catalogue.
