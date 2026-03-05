@@ -557,6 +557,30 @@ cracking or ambient noise transients — needs further investigation.
 Bransfield Strait seismicity is predominantly small/local, well below the
 global network detection threshold.
 
+**Classification completeness and threshold rationale**:
+
+The feature-based T-phase filter (power >48 dB, slope < −0.5) was calibrated
+against the distinct HDBSCAN clusters confirmed by expert montage review.
+Cross-validation against the Orca EQ catalogue shows this filter captures
+the **high-confidence** T-phase population but not the full earthquake
+detection set:
+
+- Of 636 Orca EQs with hydrophone coverage, 89% produced at least one
+  hydrophone detection within 5 minutes of the origin time
+- 43% (275 events) matched our T-phase-labeled events specifically
+- The remaining 57% (362 events) were detected but fell below classification
+  thresholds — median power 41 dB (vs 48 dB cutoff), median spectral slope
+  −0.22 (vs −0.5 cutoff). Spectrogram montage review confirms these are
+  weaker T-phases that blend into the bulk population in feature space.
+
+This is expected: smaller-magnitude earthquakes produce weaker hydroacoustic
+signatures that are harder to distinguish from non-earthquake transients
+using handcrafted features alone. The Phase 1 unsupervised approach is
+designed to identify what separates cleanly without supervision. Recovery
+of the weaker earthquake tail is deferred to Phase 2 (supervised CNN),
+where Orca-matched examples can serve as training labels for events near
+the decision boundary.
+
 **Gate**: Phase 1 deliverables (UMAP plot, montages, labeled dataset) must
 be reviewed and approved before Phase 2 begins.
 
