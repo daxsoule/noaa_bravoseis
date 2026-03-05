@@ -126,10 +126,23 @@ for validation of hydroacoustic detections.
 - **Columns**: x, y, z, zn, elevation, complete, erz, erh, date, lon, lat
 - **Date format**: MATLAB datenum (days since 0000-01-00)
 - **Coverage**: Bransfield Strait / Orca volcano region
-- **Use**: Cross-validation of hydroacoustic low-band detections against
-  independently located seismicity
+- **Use**: Cross-validation of hydroacoustic T-phase detections against
+  independently located seismicity. Validated: 89% of covered Orca EQs
+  matched hydrophone detections; 43% matched T-phase-labeled events
 
-### 4. Sound Speed Profiles (XBT)
+### 5. USGS Global Earthquake Catalogue
+
+Teleseismic earthquake catalogue retrieved from the USGS FDSN event service
+for validation of large events.
+
+- **Retrieved via**: `https://earthquake.usgs.gov/fdsnws/event/1/query`
+- **Local path**: `outputs/data/usgs_eq_catalogue.csv`
+- **Query**: −66° to −58°N, −65° to −53°W, 2019-01-01 to 2020-03-01, M≥0
+- **Events**: 4 (M4.6–5.5) — confirms Bransfield seismicity is predominantly
+  small/local, below global network detection threshold
+- **Use**: Context only; Orca catalogue is the primary seismic reference
+
+### 6. Sound Speed Profiles (XBT)
 
 In-situ expendable bathythermograph (XBT) profiles collected during the
 BRAVOSEIS deployment cruise (January 2019). These provide direct measurements
@@ -500,6 +513,49 @@ already known from detection) and allows subtler within-band structure to
 emerge: T-phases vs. local earthquakes in the low band, fin whale pulse
 trains vs. background in the mid band, tonal whale calls vs. ice cracking
 in the high band.
+
+**Phase 1 classification results** (feature-based, expert-reviewed):
+
+Per-band HDBSCAN clustering produced 3/4/5 clusters for low/mid/high bands
+respectively, plus noise. The small distinct clusters (totaling ~6,500 events)
+were identified as T-phases via spectrogram montage review (confirmed by Bob
+Dziak, NOAA/PMEL). However, feature-based filtering recovered a much larger
+T-phase population hiding in the bulk clusters:
+
+| Label | Feature criteria | Detections | Unique events (est) |
+|-------|-----------------|-----------|-------------------|
+| **T-phase (earthquake)** | peak_freq <30 Hz, power >48 dB, slope <−0.5, duration ≤3 s | ~52,800 | ~42,000 |
+| **Cryogenic (icequake)** | duration >3 s, power >48 dB, peak_freq <30 Hz, slope <−0.2 | ~23,900 | ~22,000 |
+| **Type A (broadband transient)** | Positive spectral slope, ~200 Hz peak, 41 dB, high freq modulation | ~13,700 | TBD |
+| **Bulk (unresolved)** | Remainder — heterogeneous, low SNR | ~206,000 | TBD |
+
+Key distinguishing features between T-phases and icequakes:
+- **Duration**: T-phases ≤3 s (impulsive), icequakes >3 s (sustained)
+- **Spectral slope**: T-phases steeper (< −0.5), icequakes moderate (−0.2 to −0.5)
+- **Temporal pattern**: T-phases are episodic/bursty (swarm-correlated),
+  icequakes show austral summer peaks (Jan–Mar) consistent with seasonal ice dynamics
+- **Rise time**: Icequakes have slower rise (mean 1.6 s) vs T-phases (fast onset)
+
+Type A broadband transients appear identically across all three detection bands
+(same physical events triggering multiple band detectors). Character: positive
+spectral slope, peak ~200 Hz, ~41 dB, high frequency modulation. May be ice
+cracking or ambient noise transients — needs further investigation.
+
+**Validation against Orca EQ catalogue** (5,789 located earthquakes):
+- Hydrophone coverage overlaps only ~11% of Orca catalogue (636 events)
+  due to ~5% duty cycle
+- Of covered Orca EQs: **89% matched at least one hydrophone detection**
+  (within 5 min), confirming good detector sensitivity
+- **43% matched T-phase-labeled events** specifically; remainder detected
+  but below the 48 dB power threshold (weaker events in the bulk population)
+- Median T-phase arrival delay: **28.2 s** after EQ origin — consistent with
+  ~40 km propagation at ~1.45 km/s water speed
+- USGS catalogue contains only 4 events ≥M4.6 in the region/period
+
+**USGS catalogue**: Retrieved via FDSN API for −66° to −58°N, −65° to −53°W,
+2019-01-01 to 2020-03-01, M≥0. Only 4 events (M4.6–5.5), confirming the
+Bransfield Strait seismicity is predominantly small/local, well below the
+global network detection threshold.
 
 **Gate**: Phase 1 deliverables (UMAP plot, montages, labeled dataset) must
 be reviewed and approved before Phase 2 begins.
