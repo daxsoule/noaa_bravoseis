@@ -536,10 +536,33 @@ Key distinguishing features between T-phases and icequakes:
   icequakes show austral summer peaks (Jan–Mar) consistent with seasonal ice dynamics
 - **Rise time**: Icequakes have slower rise (mean 1.6 s) vs T-phases (fast onset)
 
-Type A broadband transients appear identically across all three detection bands
-(same physical events triggering multiple band detectors). Character: positive
-spectral slope, peak ~200 Hz, ~41 dB, high frequency modulation. May be ice
-cracking or ambient noise transients — needs further investigation.
+**Type A broadband transients identified as vessel noise** based on:
+- Spectral character: positive spectral slope, peak ~188 Hz, 41 dB, broadband
+  (211 Hz bandwidth), high frequency modulation — classic propeller
+  cavitation / ship machinery noise
+- Temporal pattern: 85% of events concentrate in burst days (>100 events/day)
+  with quiet gaps between. Each burst lasts 1–4 days, consistent with vessel
+  transits through the array
+- Multi-mooring simultaneity: 47% of 200 s time bins have 2+ moorings
+  detecting simultaneously; 11% have 4+ moorings — consistent with a single
+  moving broadband source
+- Seasonal correlation: peak activity May–Sep (austral winter), matching the
+  seasonal westward shift of krill fishing trawlers into the Bransfield Strait
+  (CCAMLR Subarea 48.1). Lower activity Nov–Mar when tourism (smaller,
+  quieter vessels) dominates Antarctic Peninsula traffic
+- **~24 distinct vessel passages** estimated over 13 months, producing ~11,900
+  unique physical events across 40 burst days
+- Passage 1 (Jan 13, 2019) aligns with the R/V Sarmiento de Gamboa deploying
+  the BRAVOSEIS hydrophone array (Jan 4–17 cruise)
+- Cross-band deduplication: 12,596 detections → 11,887 unique events (only
+  688 multi-band); 10,458 after removing overlap with T-phase/icequake labels
+
+Literature context: Ship visits to the Antarctic Peninsula/South Shetland
+Islands account for 88% of all Southern Ocean vessel traffic (McCarthy et al.
+2022, PNAS). Traffic composition: tourism 67%, research 21%, fishing 7%,
+supply 5%. Krill fishing in CCAMLR Subarea 48.1 (Bransfield Strait) accounts
+for up to 57% of the regional krill harvest, with the fleet shifting westward
+in winter months.
 
 **Validation against Orca EQ catalogue** (5,789 located earthquakes):
 - Hydrophone coverage overlaps only ~11% of Orca catalogue (636 events)
@@ -627,18 +650,18 @@ feature filtering and expert montage review) identified four populations:
 
 | Class | Detections | Unique events (est) | % of catalogue |
 |-------|-----------|-------------------|---------------|
-| T-phase (earthquake) | ~52,800 | ~42,000 | 17.8% |
-| Cryogenic (icequake) | ~23,900 | ~22,000 | 8.0% |
-| Broadband transient (Type A) | ~13,700 | TBD | 4.6% |
-| Unresolved (bulk) | ~206,000 | TBD | 69.3% |
+| T-phase (earthquake) | 55,783 | ~42,000 | 18.8% |
+| Cryogenic (icequake) | 23,331 | ~22,000 | 7.8% |
+| Vessel noise (Type A) | 10,458 | ~11,900 | 3.5% |
+| Unresolved (bulk) | 207,598 | — | 69.9% |
 
 T-phase classification confirmed by Bob Dziak (NOAA/PMEL) via spectrogram
 montage review. Icequake classification supported by seasonal temporal
-pattern (austral summer peaks). Type A broadband transients (positive
-spectral slope, ~200 Hz peak frequency, high frequency modulation) appear
-identically across all three detection bands, indicating the same physical
-events trigger multiple band detectors. Their source remains under
-investigation.
+pattern (austral summer peaks). Vessel noise identification supported by
+burst pattern, multi-mooring simultaneity, and seasonal correlation with
+krill fishing fleet activity (see below). The classified populations are
+mutually exclusive in feature space (zero overlap between T-phases and
+vessel noise during seismic swarm periods).
 
 ### Cross-Validation Against Orca Seismic Network
 
@@ -690,6 +713,61 @@ whether these swarms originate from known fault structures, from along
 the Bransfield rift axis, or from more distant sources. This is the
 critical next analysis step.
 
+### Vessel Noise (Type A Broadband Transients)
+
+The ~10,500 Type A detections (11,900 unique physical events after cross-band
+deduplication) are identified as vessel traffic based on spectral, temporal,
+and spatial evidence:
+
+- **Spectral signature**: Positive spectral slope, peak ~188 Hz, 41 dB median
+  power, broadband (211 Hz bandwidth) — characteristic of propeller cavitation
+  and ship machinery noise
+- **Burst pattern**: 85% of events concentrate in burst days (>100 events/day);
+  each burst lasts 1–4 days consistent with vessel transits through the array
+- **Multi-mooring detection**: 47% of 200 s time bins have 2+ moorings
+  detecting simultaneously; 11% have 4+ — a single moving broadband source
+  illuminating the full array
+- **~24 distinct vessel passages** over 13 months, with the largest bursts
+  generating 500–1,100 events over 2–3 days
+- **Seasonal pattern**: Peak activity May–Sep (austral winter), correlating
+  with the seasonal westward shift of krill fishing trawlers into the
+  Bransfield Strait (CCAMLR Subarea 48.1). Lower activity Nov–Mar when
+  tourism vessels (smaller, quieter) dominate Antarctic Peninsula traffic
+- **Deployment cruise detection**: Passage 1 (Jan 13, 110 events) aligns with
+  the R/V Sarmiento de Gamboa deploying the hydrophone array (Jan 4–17, 2019)
+
+**No contamination of seismic results**: During both T-phase swarm periods
+(Feb 11, Apr 22–24), Type A vessel noise counts were 0–9 events/day
+(background level), with zero overlap between T-phase and vessel noise
+classifications. The populations occupy completely separate regions of
+feature space (negative vs positive spectral slope; <30 Hz vs >100 Hz
+peak frequency).
+
+### Bulk Population (Unresolved)
+
+The 207,598 unresolved events (70% of catalogue) represent the detector's
+ambient detection floor — events that triggered STA/LTA but lack distinctive
+features for confident classification:
+
+- **11 dB weaker** than classified events (median power 42.4 dB vs 53.7 dB)
+- **Spectral slope centered near zero** (median −0.33) — no strong spectral
+  character in either direction
+- **Three dominant clusters** account for 96%: mid_3 (90,669), high_4
+  (56,106), low_2 (53,352) — the large "background" clusters in each band
+- **36% have power <40 dB** (near noise floor); 46% have power 40–48 dB
+  (below classification thresholds); 18% have power ≥48 dB
+- **49.5% pass relaxed T-phase criteria** (peak_freq <30 Hz, slope <−0.2,
+  duration ≤5 s) — likely weak or distant earthquakes below the conservative
+  48 dB power threshold
+- Spectrogram montage review shows a mix of: faint noise-floor triggers,
+  weak T-phases, possible icequakes below threshold, and some higher-frequency
+  signals (possible whale calls, reserved for separate study)
+
+The bulk population is the primary target for **Phase 2 supervised CNN**
+classification, where high-confidence Phase 1 labels and Orca-matched
+examples can serve as training data to recover weaker events near the
+decision boundary.
+
 ### Icequake Seasonality
 
 The 22,000 identified icequakes show a clear seasonal pattern:
@@ -714,6 +792,8 @@ breakup, and glacial activity during warmer months.
 - **References**:
   - Fox et al. (2001) — PMEL hydroacoustic processing library (IDL)
   - Dziak et al. (2010) — Sound speed propagation models
+  - McCarthy et al. (2022) — Ship traffic connects Antarctica's fragile
+    coasts to worldwide ecosystems (PNAS). AIS vessel traffic 2014–2018.
 - **Data sharing**: No restrictions or embargo.
 - **Target journals**: JASA (Journal of the Acoustical Society of America)
   or Antarctic Science.
