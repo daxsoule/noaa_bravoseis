@@ -403,6 +403,72 @@ system reliably flags uncertain picks.
 **Implementation**: `refine_onsets.py` (vectorized AIC using cumulative sums).
 QC: `validate_onsets.py`.
 
+### Seismic Onset Refinement (spec 001)
+
+The AIC picker picks late on emergent T-phases — the 4.3% grade C picks are
+concentrated in 6 seismic clusters (11,958 events). A **seismic-tuned dual
+onset picker** runs two independent methods and uses an **AIC-first rescue
+strategy**: keep the AIC pick when it works (grade A/B), switch to the seismic
+pick only when AIC is struggling (grade C or quality < 0.4).
+
+**Target clusters** (identified during Phase 1c cluster labeling):
+
+| Cluster | Events | Type | Filter | Pre-window |
+|---------|--------|------|--------|------------|
+| low_0 | 4,686 | emergent T-phase | 1–15 Hz | 10 s |
+| low_1 | 3,666 | mixed seismic | 1–15 Hz | 8 s |
+| low_2_2 | 1,134 | impulsive broadband | 1–15 Hz | 5 s |
+| mid_0 | 1,056 | mixed seismic | 5–30 Hz | 8 s |
+| mid_3_1 | 1,067 | emergent broadband | 5–30 Hz | 8 s |
+| mid_3_3 | 349 | impulsive | 5–30 Hz | 5 s |
+
+Mid-band filter extends to 5 Hz (below the 15 Hz detection passband) to
+capture leading-edge T-phase energy that arrives before the mid-band onset.
+
+**Picker 1 — Envelope STA/LTA**: Hilbert transform → 50 ms boxcar smooth →
+energy (squared envelope) → STA/LTA (0.5 s / 5.0 s) via vectorized cumsum →
+trigger at ratio 2.0 → backtrack to ratio 1.2 (the "creep onset" where energy
+first rises above background). Quality from peak STA/LTA and rise steadiness.
+
+**Picker 2 — Kurtosis onset**: Sliding-window excess kurtosis (0.25 s window,
+cumsum method) → noise kurtosis from first 25% of window → z-score relative to
+noise stats → trigger at 3σ with 0.1 s sustained exceedance → backtrack to
+z > 1.0 for true onset. Quality from peak z-score and sustainment.
+
+**Combining logic (AIC-first rescue)**:
+1. If existing AIC pick is grade A or B (quality >= 0.4): **keep AIC pick**
+2. If AIC is grade C: run both seismic pickers, reject picks with quality
+   < 0.15, positive shift, or shift > 95% of pre-window
+3. Take the earlier valid seismic pick (more negative shift = earlier onset)
+4. If both seismic pickers fail: keep AIC pick as-is (no downgrade)
+
+**Results** (11,958 seismic events):
+
+| Method | Events | Fraction |
+|--------|--------|----------|
+| AIC kept | 11,525 | 96.4% |
+| Envelope rescue | 354 | 3.0% |
+| Kurtosis rescue | 79 | 0.7% |
+
+| Grade | Old (AIC) | New (dual) |
+|-------|-----------|------------|
+| A | 9,311 (77.9%) | 9,315 (77.9%) |
+| B | 2,137 (17.9%) | 2,324 (19.4%) |
+| C | 510 (4.3%) | 319 (2.7%) |
+
+Grade C reduced by **37%** (510 → 319). Of the 510 old grade C events, 191
+were rescued to grade A (4) or B (187). No events were downgraded — the rescue
+is strictly additive.
+
+**Output**: `outputs/data/seismic_onsets.parquet` — per-event columns:
+event_id, cluster_id, seis_onset_utc, seis_onset_shift_s, seis_onset_method,
+seis_onset_quality, seis_onset_grade, env_pick_shift_s, env_pick_quality,
+kurt_pick_shift_s, kurt_pick_quality, pre_window_s, filter_low_hz,
+filter_high_hz.
+
+**Implementation**: `pick_seismic_onsets.py`. QC figures in
+`outputs/figures/exploratory/seismic_onsets/`.
+
 ### Event Discrimination Approach (spec 002)
 
 Classification proceeds in **two phases**:
