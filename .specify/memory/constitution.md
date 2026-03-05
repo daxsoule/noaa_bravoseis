@@ -611,6 +611,98 @@ Spectrogram parameters: `nperseg=1024` (1.024 s), 50% overlap, fs=1000 Hz,
 panels per figure. These windows serve as the **tuning reference** for
 STA/LTA parameter calibration.
 
+## Preliminary Results
+
+### Catalogue Summary
+
+The three-pass STA/LTA detector produced **297,170 detections** across 717
+four-hour DAT files from 6 moorings over ~13 months (Jan 2019 – Feb 2020).
+Due to the ~5% duty cycle, this represents a sparse but consistent sample of
+the Bransfield Strait acoustic environment.
+
+### Phase 1 Event Classification
+
+Feature-based classification (UMAP + HDBSCAN clustering, supplemented by
+feature filtering and expert montage review) identified four populations:
+
+| Class | Detections | Unique events (est) | % of catalogue |
+|-------|-----------|-------------------|---------------|
+| T-phase (earthquake) | ~52,800 | ~42,000 | 17.8% |
+| Cryogenic (icequake) | ~23,900 | ~22,000 | 8.0% |
+| Broadband transient (Type A) | ~13,700 | TBD | 4.6% |
+| Unresolved (bulk) | ~206,000 | TBD | 69.3% |
+
+T-phase classification confirmed by Bob Dziak (NOAA/PMEL) via spectrogram
+montage review. Icequake classification supported by seasonal temporal
+pattern (austral summer peaks). Type A broadband transients (positive
+spectral slope, ~200 Hz peak frequency, high frequency modulation) appear
+identically across all three detection bands, indicating the same physical
+events trigger multiple band detectors. Their source remains under
+investigation.
+
+### Cross-Validation Against Orca Seismic Network
+
+The co-deployed Orca OBS/land seismometer network located 5,789 earthquakes
+in the Bransfield Strait during the same period. Due to the hydrophone duty
+cycle, only **636 Orca events (11%)** fall within our recording windows.
+
+Of these 636 covered earthquakes:
+- **89% (567)** produced at least one hydrophone detection within 5 minutes
+  of the seismic origin time — confirming high detector sensitivity
+- **43% (275)** matched T-phase-labeled events specifically
+- **57% (362)** were detected but below the feature classification threshold
+  (median power 41 dB vs 48 dB cutoff) — consistent with smaller-magnitude
+  events producing weaker hydroacoustic signatures
+- **Median T-phase arrival delay: 28.2 s** — physically consistent with
+  ~40 km propagation at ~1.45 km/s effective water speed
+
+The USGS global catalogue contains only 4 events ≥M4.6 in the study region
+during this period, confirming that Bransfield Strait seismicity is
+predominantly local and small-magnitude.
+
+### Hydroacoustic Detection of Seismicity Beyond the OBS Network
+
+The hydrophone array detected several major T-phase swarms that the Orca
+seismic network largely missed:
+
+**Feb 11, 2019**: 4,976 T-phase detections in a single day across 5 moorings
+(M3 off-duty), sustained over ~8 hours at rates up to 200 events/hour.
+Spectrogram montage confirms classic T-phase signatures (impulsive broadband
+bursts with dominant energy below 50 Hz). The Orca catalogue contains only
+117 events in the surrounding week (Feb 8–14), with the Orca activity peaking
+2–3 days later (Feb 13–14) rather than on Feb 11.
+
+**Apr 22–24, 2019**: A three-day swarm building to 3,495 T-phases on the
+peak day (Apr 24), visible across 5 moorings. Orca recorded only 21 events
+in the same week — background-level activity with no corresponding swarm.
+
+These discrepancies suggest the hydrophone array is detecting earthquake
+swarms **outside the Orca network's location capability** — either beyond
+its geographic footprint (the Orca network is focused on the Orca volcano
+area near 58.4°W, 62.4°S) or below its location threshold (events arriving
+at too few OBS stations to locate). The hydrophones, with a much larger
+detection radius due to efficient T-phase propagation through the water
+column, capture seismicity that the local seismic network cannot.
+
+**Implication**: Source location of the hydroacoustic T-phase catalogue
+(using cross-mooring arrival time differences) is needed to determine
+whether these swarms originate from known fault structures, from along
+the Bransfield rift axis, or from more distant sources. This is the
+critical next analysis step.
+
+### Icequake Seasonality
+
+The 22,000 identified icequakes show a clear seasonal pattern:
+- **Austral summer peaks**: Jan–Mar 2019 and Jan 2020
+- **Minimum**: Sep–Dec 2019 (late winter / early spring)
+- Secondary peak in Jul 2019 (austral winter — possibly thermal cracking
+  or pressure ridging of sea ice)
+
+This seasonal modulation is distinct from the episodic/bursty temporal
+pattern of T-phases and provides independent support for the cryogenic
+classification. The pattern is consistent with increased calving, ice
+breakup, and glacial activity during warmer months.
+
 ## Project Notes
 
 - **International collaboration**: Spain, Germany, and United States.
