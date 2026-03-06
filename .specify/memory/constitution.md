@@ -840,6 +840,76 @@ pattern of T-phases and provides independent support for the cryogenic
 classification. The pattern is consistent with increased calving, ice
 breakup, and glacial activity during warmer months.
 
+### Source Location (Grid-Search TDOA)
+
+Event locations are computed by **grid-search TDOA** (time-difference-of-arrival)
+minimization over a geographic grid covering the Bransfield Strait. For each
+cross-mooring association with >=3 moorings, the algorithm finds the grid point
+that minimizes the RMS residual between observed and predicted inter-station
+travel time differences.
+
+**Grid**: 0.01° spacing (~1 km) covering the study area ±0.5° padding. Total
+154,700 grid points. Geodesic distances precomputed from each grid point to
+all 6 moorings using WGS84 ellipsoid. Effective horizontal sound speed:
+**1455.5 m/s** (XBT-derived, harmonic mean over water column).
+
+**Multipath protection**: Three mechanisms address multipath-contaminated onsets:
+
+1. **Per-mooring outlier detection** (>=4 moorings): If one mooring's individual
+   residual exceeds 3× the median residual AND >1 s, relocate without that
+   mooring. If residual improves by >30%, accept the reduced solution. Applied
+   to 403 events.
+
+2. **Jackknife (leave-one-out) validation** (>=4 moorings): Relocate N times
+   dropping each mooring in turn. If max location shift >15 km, flag as
+   jackknife-unstable and downgrade quality tier. 281 events (1.9%) flagged.
+
+3. **Distance constraint**: Locations >150 km from the array centroid are
+   assigned tier D (unreliable), since the array geometry cannot constrain
+   locations far outside its footprint.
+
+**Quality tiers**:
+
+| Tier | Criteria | Count | Median residual |
+|------|----------|-------|-----------------|
+| A | >=4 moorings, residual <1 s, jackknife-stable | 4,304 | 0.00 s |
+| B | >=3 moorings, residual <2 s | 6,979 | 0.00 s |
+| C | >=3 moorings, residual 2–5 s or jackknife-unstable | 926 | 3.29 s |
+| D | 2 moorings, >150 km from array, or residual >5 s | 28,575 | — |
+
+**Note**: Tier A/B residuals of 0.00 s are expected for 3-mooring events —
+with 2 TDOAs and 2 unknowns (lat, lon), the system is fully determined and
+the grid search finds an exact-fit solution. Residual-based quality assessment
+is only meaningful for >=4 mooring events (over-determined system). Tier A
+requires >=4 moorings for this reason.
+
+**Results**: 12,209 events located (tiers A+B+C):
+
+| Class | Located | Tier A | Tier B | Tier C |
+|-------|---------|--------|--------|--------|
+| T-phase | 9,466 | 3,494 | 5,224 | 748 |
+| Icequake | 1,030 | — | — | — |
+| Vessel | 377 | — | — | — |
+| Unclassified | 1,336 | — | — | — |
+
+T-phase locations concentrate along the **central Bransfield Rift axis**
+between BRA30–BRA33, consistent with known extensional tectonics. Temporal
+panels (2-month bins) show clear swarm clustering, with the Feb 11 and
+Apr 22-24 swarms spatially concentrated in the central basin.
+
+**Known issue**: Icequake locations scatter into open water (Drake Passage),
+which is physically implausible — icequakes should originate near coastlines
+and glaciers. This likely reflects: (1) misclassification by the CNN of
+distant T-phases or other signals as icequakes, (2) poor 3-mooring locations
+with no residual-based quality check, and/or (3) incorrect associations
+linking unrelated events. Icequake locations require additional filtering
+(e.g., restricting to proximity of known ice sources) before publication.
+
+**Implementation**: `scripts/locate_events.py`. Outputs:
+`outputs/data/event_locations.parquet`,
+`outputs/figures/exploratory/location/` (overview map, 6-panel T-phase and
+icequake maps with time-colored, size-scaled dots).
+
 ## Project Notes
 
 - **International collaboration**: Spain, Germany, and United States.
