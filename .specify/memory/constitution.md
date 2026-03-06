@@ -885,30 +885,162 @@ requires >=4 moorings for this reason.
 
 **Results**: 12,209 events located (tiers A+B+C):
 
-| Class | Located | Tier A | Tier B | Tier C |
-|-------|---------|--------|--------|--------|
-| T-phase | 9,466 | 3,494 | 5,224 | 748 |
-| Icequake | 1,030 | — | — | — |
-| Vessel | 377 | — | — | — |
-| Unclassified | 1,336 | — | — | — |
+| Class | Located (raw) | After filter | Notes |
+|-------|--------------|-------------|-------|
+| T-phase | 9,466 | 9,466 | Along rift axis; 66 swarm outliers flagged |
+| Icequake | 1,030 | **619** | 507 near coast + 112 in sea ice; 411 reclassified |
+| Vessel | 377 | 377 | — |
+| Unclassified | 1,336 | 1,747 | Includes reclassified icequakes |
 
 T-phase locations concentrate along the **central Bransfield Rift axis**
 between BRA30–BRA33, consistent with known extensional tectonics. Temporal
 panels (2-month bins) show clear swarm clustering, with the Feb 11 and
 Apr 22-24 swarms spatially concentrated in the central basin.
 
-**Known issue**: Icequake locations scatter into open water (Drake Passage),
-which is physically implausible — icequakes should originate near coastlines
-and glaciers. This likely reflects: (1) misclassification by the CNN of
-distant T-phases or other signals as icequakes, (2) poor 3-mooring locations
-with no residual-based quality check, and/or (3) incorrect associations
-linking unrelated events. Icequake locations require additional filtering
-(e.g., restricting to proximity of known ice sources) before publication.
+**Icequake coast-distance + sea-ice filter**: Unfiltered icequake locations
+exhibited a spatial distribution statistically identical to T-phases (same
+mean lat/lon, same rift-zone fraction, same distance-to-coast distribution),
+indicating widespread misclassification of mid-strait events. Icequakes
+should originate near ice-rock/ice-water interfaces (glaciers, ice shelves,
+icebergs near calving fronts, or sea ice), not in ice-free deep water along
+the rift axis. Likely causes: (1) CNN misclassification of distant T-phases
+as icequakes, (2) poor 3-mooring locations with zero residual (fully
+determined system = no quality check), and (3) incorrect associations.
+
+**Resolution**: A **seasonally varying filter** combines coast distance with
+satellite sea ice concentration:
+
+1. Each located icequake's geodesic distance to the nearest coastline or
+   Antarctic ice shelf is computed using Natural Earth 10 m land polygons +
+   Antarctic ice shelf polygons (via cartopy/shapely).
+2. Monthly sea ice concentration (SIC) at each event location is looked up
+   from the NSIDC Climate Data Record V4 (25 km, passive microwave,
+   PolarWatch ERDDAP).
+3. Events within 30 km of coast/ice shelves are retained (glacial sources).
+4. Events >30 km from coast BUT in ice-covered water (monthly SIC ≥ 15%)
+   are retained (sea-ice cracking is physically plausible).
+5. Events >30 km from coast AND in ice-free water are reclassified to
+   "unclassified".
+
+Of 1,030 located icequakes: **507 retained** (near coast), **112 retained**
+(in ice-covered water during winter), **411 reclassified** (far from coast,
+no ice). Total **619 icequakes** retained. The sea-ice-retained events
+concentrate in Jun–Sep 2019 (peak winter ice coverage), consistent with
+sea-ice cracking and pressure ridging during austral winter.
+
+**2019 sea ice context**: 2019 had anomalously low Antarctic sea ice —
+record-low January and June extents since 1978. The Bransfield Strait
+was ice-free Dec–Mar, with freeze-up starting ~May and peak coverage
+Jul–Sep. This means our summer icequake peaks (Jan–Mar) are entirely
+glacial/ice-shelf sources, while winter icequakes include both coastal
+and sea-ice sources.
+
+New output columns: `dist_to_coast_km`, `sea_ice_conc`, `icequake_filtered`.
+
+**Formal location uncertainty**: Estimated from the curvature (Hessian) of
+the RMS residual surface at the grid-search minimum via finite differences.
+The eigenvalues of the 2×2 Hessian give curvature in the principal
+directions; the geometric mean of the semi-axes (1-σ level) is reported
+as `uncertainty_km`. Results:
+
+| Tier | Median uncertainty | Notes |
+|------|--------------------|-------|
+| A | 0.1 km | ≥4 moorings, over-determined |
+| B | 0.0 km | Mostly 3-mooring (zero residual → sharp minimum, formally overconfident) |
+| C | 8.6 km | Poor fit, broad minimum |
+
+**Known limitation**: 3-mooring events (majority of tier B) have zero
+residual because the system is fully determined (2 TDOAs, 2 unknowns). The
+uncertainty estimate for these events is formally near-zero but physically
+overconfident — the true uncertainty is dominated by systematic errors
+(sound speed, onset picking) not captured by the residual curvature.
+Uncertainty for ≥4 mooring events is more reliable.
+
+**Swarm coherence QC**: Temporally adjacent T-phase events (gap <1 hour)
+are grouped into swarms. Events within a swarm whose distance from the
+swarm's spatial centroid exceeds 3× MAD are flagged as `swarm_outlier`.
+79 swarms identified containing 9,443 T-phase events; **66 spatial
+outliers** flagged (median 174 km from centroid — clearly mislocated).
+These are retained in the dataset but flagged for exclusion from spatial
+analyses. Inspired by the iterative track-constrained relocation approach
+of Wilcock (2012).
+
+New output columns: `uncertainty_km`, `swarm_id`, `swarm_dist_km`,
+`swarm_outlier`.
+
+**Flat-ocean / single-speed limitation**: The grid-search TDOA uses a
+single effective horizontal sound speed (1455.5 m/s) and straight-line
+geodesic distances, ignoring depth-dependent velocity structure and
+bathymetric refraction/reflection along source-receiver paths. This is a
+standard simplification for regional hydroacoustic arrays (Fox et al. 2001,
+Dziak et al. 2010) but introduces systematic location bias near bathymetric
+barriers (ridges, shallow sills) where acoustic paths deviate from
+straight lines. For comparison, Wilcock (2012) used 2D ray tracing with
+depth-dependent velocity and bathymetry for a compact OBS array (15–20 km
+range); such an approach would require a 3D regional sound speed model
+not available for the Bransfield Strait.
 
 **Implementation**: `scripts/locate_events.py`. Outputs:
 `outputs/data/event_locations.parquet`,
 `outputs/figures/exploratory/location/` (overview map, 6-panel T-phase and
 icequake maps with time-colored, size-scaled dots).
+
+### Methodological Comparison: Wilcock (2012) Fin Whale Localization
+
+The BRAVOSEIS source location pipeline was compared against the fin whale
+call localization method used in Wilcock (2012, J. Geophys. Res.) on the
+Endeavour segment OBS network. Key differences and lessons:
+
+**Association**: Wilcock uses a fixed 2.5 s window requiring ≥4 OBSs (8
+channels). BRAVOSEIS uses pair-specific travel-time windows (21–139 s, XBT-
+derived) requiring only ≥2 moorings. The compact OBS array (~15–20 km range)
+vs. our 175 km aperture drives this difference. Our looser threshold
+contributes to higher false-association rates for 3-mooring events.
+
+**Classification**: Wilcock uses a single spectral energy ratio (15–35 Hz
+vs 5–15 Hz) with majority vote — elegant and sufficient for the binary
+whale/not-whale problem. Our multi-class problem (T-phase, icequake, vessel)
+requires the more complex two-phase ML pipeline.
+
+**Arrival picking**: Wilcock explicitly picks both direct and multiple
+arrivals (Hilbert envelope peaks, 2× noise threshold, ≥1 s separation).
+BRAVOSEIS picks only first arrivals (AIC + kurtosis), treating multiples
+as contamination to reject rather than signal to exploit. The multipath-as-
+signal approach extracts more information but requires multi-channel data
+and manageable inter-station distances.
+
+**Travel times**: Wilcock uses 2D ray tracing (RAY software, Bowlin et al.
+1993) with a depth-dependent velocity model and bathymetry along each
+source-station profile. BRAVOSEIS uses a single effective horizontal speed
+(1455.5 m/s). At our 175 km scale, a full 3D ray-tracing approach would
+require a regional sound speed model we do not have, but the flat-ocean
+approximation is a known limitation — particularly near bathymetric
+barriers (ridges, shallow sills) that may refract or block acoustic paths.
+
+**Grid search + multipath fitting**: Wilcock's grid search jointly optimizes
+location AND the number of multiples assigned to each arrival. BRAVOSEIS
+optimizes location only, with post-hoc outlier mooring rejection. The joint
+approach is more powerful but assumes arrival phases can be reliably identified.
+
+**QC and iterative relocation**: Wilcock identifies physically continuous
+whale tracks (≥30 locations, ≥30 min, ≥2.5 km distance), then uses a
+manually input smooth path to constrain a second grid-search iteration.
+This exploits temporal continuity as a physical prior. BRAVOSEIS has no
+iterative relocation — quality control is single-pass (residual thresholds,
+jackknife, coast-distance filter). Potential improvement: use T-phase
+swarm coherence (spatial clustering of temporally grouped events) as an
+analogous physical prior for quality assessment.
+
+**Formal uncertainty**: Wilcock reports 0.5 km precision inside the network,
+degrading to several km at the edges. BRAVOSEIS has no formal location
+uncertainty — only quality tiers as a proxy. Estimating uncertainty from
+the curvature of the residual surface at the grid-search minimum is a
+feasible improvement.
+
+**Identified improvements for BRAVOSEIS** (future work):
+1. Swarm coherence QC — spatial clustering of temporally grouped T-phases
+2. Formal location uncertainty from residual surface curvature
+3. Note flat-ocean/single-speed limitation in paper methods
 
 ## Project Notes
 
