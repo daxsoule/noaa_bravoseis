@@ -607,15 +607,57 @@ the decision boundary.
 **Gate**: Phase 1 deliverables (UMAP plot, montages, labeled dataset) must
 be reviewed and approved before Phase 2 begins.
 
-**Phase 2 — Supervised CNN**: Train a lightweight convolutional neural
-network (~100K–500K parameters, 3–4 conv blocks) on labeled spectrogram
-patches using PyTorch on GPU. Weighted cross-entropy loss, AdamW optimizer,
-early stopping. Target: **>=80% macro F1** on broad classes. Apply to full
-catalogue with confidence scores.
+**Phase 2 — Hybrid CNN+MLP Classifier**: A dual-branch neural network
+combining spectrogram patches (CNN branch, 4 conv blocks) with handcrafted
+features (MLP branch, 2 FC layers), fused before a classification head.
+Total: 258,627 parameters. PyTorch on NVIDIA L40S GPU.
 
-**Future extension**: Convolutional autoencoder for learned feature
-extraction, potentially improving separation of ambiguous event types.
-Deferred until handcrafted features are validated.
+Architecture rationale: Pure CNN (spectrogram-only) achieved only 39% macro
+F1 — spectrograms alone are insufficiently discriminative because Phase 1
+labels were defined by summary statistics (peak frequency, spectral slope,
+power, duration), not visual appearance. The hybrid model feeds both raw
+spectrograms and the handcrafted features, allowing the CNN branch to learn
+complementary visual patterns while the MLP branch captures the statistics
+the labels were based on.
+
+Spectrogram parameters: 8 s window (2 s pre-event pad), nperseg=256,
+overlap=87.5%, 0–100 Hz, resized to 64×128 pixels. Per-sample normalization
+(zero-mean, unit-variance) so the model learns spectral shape, not absolute
+power level.
+
+Training: 70/15/15 train/val/test split (62,683 / 13,432 / 13,432 events).
+Weighted random sampling for class balance. Cross-entropy loss (unweighted —
+sampler handles balance). AdamW optimizer (lr=1e-3, weight_decay=1e-4),
+cosine annealing LR schedule. SpecAugment-style augmentation (time/freq
+masking, time shift). Early stopping (patience=8 epochs on val macro F1).
+
+**Test set results**: 95.1% accuracy, **93.7% macro F1** (target: >=80%).
+
+| Class | Precision | Recall | F1 | Support |
+|-------|-----------|--------|-----|---------|
+| T-phase | 1.00 | 0.92 | 0.96 | 8,402 |
+| Icequake | 0.93 | 1.00 | 0.96 | 3,435 |
+| Vessel | 0.80 | 1.00 | 0.89 | 1,595 |
+
+Main confusion: 400 T-phases predicted as vessel (4.8%), 249 T-phases
+predicted as icequake (3.0%). Icequake and vessel classes have near-perfect
+recall.
+
+**Bulk population predictions** (207,528 events):
+
+| CNN Prediction | Count | % | High-conf (>=0.8) |
+|---------------|-------|---|-------------------|
+| T-phase | 123,866 | 59.7% | 117,077 |
+| Icequake | 49,282 | 23.7% | 44,989 |
+| Vessel | 34,380 | 16.6% | 29,280 |
+
+Confidence distributions are heavily right-skewed (median >0.98 for all
+classes), indicating the model is decisive even on previously unclassified
+events.
+
+**Implementation**: `train_cnn.py` (extraction, training, inference).
+Cached spectrograms in `outputs/data/spectrograms/`. Model checkpoint in
+`outputs/data/cnn_model.pt`. Predictions in `outputs/data/cnn_predictions.parquet`.
 
 ### Array Spectrograms
 
@@ -662,6 +704,23 @@ burst pattern, multi-mooring simultaneity, and seasonal correlation with
 krill fishing fleet activity (see below). The classified populations are
 mutually exclusive in feature space (zero overlap between T-phases and
 vessel noise during seismic swarm periods).
+
+### Phase 2 CNN Classification
+
+The hybrid CNN+MLP classifier (93.7% macro F1 on test set) was applied to
+the 207,528 previously unclassified bulk events, recovering the full
+catalogue:
+
+| Class | Phase 1 | Phase 2 (high-conf) | Combined |
+|-------|---------|-------------------|----------|
+| T-phase | 55,783 | 117,077 | **172,860** |
+| Icequake | 23,331 | 44,989 | **68,320** |
+| Vessel noise | 10,458 | 29,280 | **39,738** |
+| Low-confidence | — | 16,182 | 16,182 |
+
+The Phase 2 model tripled the classified T-phase population and nearly
+tripled icequakes, consistent with the Phase 1 finding that ~50% of bulk
+events had features consistent with weak T-phases.
 
 ### Cross-Validation Against Orca Seismic Network
 

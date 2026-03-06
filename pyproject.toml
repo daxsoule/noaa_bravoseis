@@ -21,6 +21,7 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "scipy>=1.17.1",
     "setuptools>=82.0.0",
+    "torch>=2.10.0",
     "umap-learn>=0.5.11",
     "weasyprint>=68.1",
     "xarray>=2026.2.0",
