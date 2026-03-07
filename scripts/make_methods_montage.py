@@ -49,7 +49,7 @@ FS_TICK = 9
 FS_CAPTION = 10
 
 # === Event selection parameters ===
-N_EXAMPLES = 4  # columns per class
+N_EXAMPLES = 6  # columns per class
 
 # === Band-specific filter for waveform display ===
 BAND_FILTERS = {
@@ -214,7 +214,7 @@ def _make_one_row(cls, events, color, freq_max, caption_text):
     Returns the saved path.
     """
     n_cols = len(events)
-    fig = plt.figure(figsize=(14, 4.8))
+    fig = plt.figure(figsize=(21, 4.8))
 
     # Panels fill the top; caption goes in a reserved bottom strip
     panel_gs = GridSpec(2, n_cols, figure=fig,

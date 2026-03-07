@@ -7,6 +7,7 @@ Produces:
   2. onset_refinement_6panel.png — 6 curated onset refinement examples (§3.2)
   3. tphase_cluster_curated.png  — 2×3 T-phase cluster montage (§4.1)
   4. magnitude_completeness.png  — Cumulative freq vs. relative source level (§new)
+  5. umap_clustering_composite.png — 1×3 UMAP projections colored by class (§4)
 
 Usage:
     uv run python scripts/make_methods_figures.py
@@ -14,6 +15,7 @@ Usage:
     uv run python scripts/make_methods_figures.py --figure onset
     uv run python scripts/make_methods_figures.py --figure cluster
     uv run python scripts/make_methods_figures.py --figure completeness
+    uv run python scripts/make_methods_figures.py --figure umap
 """
 
 import argparse
@@ -613,12 +615,172 @@ def fig_magnitude_completeness():
 
 
 # ========================================================================
+# Figure 5: UMAP clustering composite (1×3, colored by class)
+# ========================================================================
+
+def fig_umap_clustering_composite():
+    """1×3 UMAP panel figure (low, mid, high) colored by class assignment."""
+    print("=== UMAP Clustering Composite ===")
+    import json
+
+    # Load data
+    umap_df = pd.read_parquet(DATA_DIR / "umap_coordinates.parquet")
+    features = pd.read_parquet(DATA_DIR / "event_features.parquet")
+
+    with open(DATA_DIR / "cluster_labels.json") as f:
+        cluster_labels = json.load(f)["labels"]
+
+    # --- Assign class labels using same logic as train_cnn.py ---
+    # T-phase: cluster-based + feature-based
+    tphase_clusters = {"low_0", "low_1", "mid_0"}
+    cluster_tphase = set(
+        umap_df[umap_df["cluster_id"].isin(tphase_clusters)]["event_id"]
+    )
+    feat_tphase_mask = (
+        (features["spectral_slope"] < -0.5)
+        & (features["peak_freq_hz"] < 30)
+        & (features["peak_power_db"] > 48)
+        & (features["duration_s"] <= 3)
+    )
+    all_tphase = cluster_tphase | set(features.loc[feat_tphase_mask, "event_id"])
+
+    # Icequake: feature-based + cluster high_2
+    feat_ice_mask = (
+        (features["duration_s"] > 3)
+        & (features["peak_power_db"] > 48)
+        & (features["peak_freq_hz"] < 30)
+        & (features["spectral_slope"] < -0.2)
+    )
+    ice_cluster = set(umap_df[umap_df["cluster_id"] == "high_2"]["event_id"])
+    all_ice = (set(features.loc[feat_ice_mask, "event_id"]) | ice_cluster) - all_tphase
+
+    # Vessel noise: feature-based (Type A broadband transients)
+    type_a_mask = (
+        (features["spectral_slope"] > 0)
+        & (features["peak_freq_hz"] > 100)
+        & (features["bandwidth_hz"] > 150)
+        & (features["freq_modulation"] > 30)
+    )
+    all_vessel = set(features.loc[type_a_mask, "event_id"]) - all_tphase - all_ice
+
+    # Map event_id to class
+    class_map = {}
+    for eid in all_tphase:
+        class_map[eid] = "T-phase"
+    for eid in all_ice:
+        class_map[eid] = "Icequake"
+    for eid in all_vessel:
+        class_map[eid] = "Vessel"
+
+    umap_df["event_class"] = umap_df["event_id"].map(class_map).fillna("Unresolved")
+
+    print(f"  Total UMAP points: {len(umap_df):,}")
+    for cls in ["T-phase", "Icequake", "Vessel", "Unresolved"]:
+        n = (umap_df["event_class"] == cls).sum()
+        print(f"    {cls}: {n:,}")
+
+    # --- Color and style definitions ---
+    class_colors = {
+        "T-phase": "#1f77b4",      # blue
+        "Icequake": "#ff7f0e",     # orange
+        "Vessel": "#2ca02c",       # green
+        "Unresolved": "#cccccc",   # light gray
+    }
+    class_alpha = {
+        "T-phase": 0.6,
+        "Icequake": 0.6,
+        "Vessel": 0.6,
+        "Unresolved": 0.3,
+    }
+    class_size = {
+        "T-phase": 4,
+        "Icequake": 4,
+        "Vessel": 4,
+        "Unresolved": 1,
+    }
+    class_zorder = {
+        "Unresolved": 1,
+        "Vessel": 2,
+        "Icequake": 3,
+        "T-phase": 4,
+    }
+
+    band_configs = [
+        ("low", "Low Band (1\u201315 Hz)"),
+        ("mid", "Mid Band (15\u201330 Hz)"),
+        ("high", "High Band (30\u2013250 Hz)"),
+    ]
+
+    # --- Plot ---
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig.subplots_adjust(left=0.04, right=0.88, top=0.88, bottom=0.10, wspace=0.22)
+
+    # Draw order: Unresolved first (behind), then classified
+    draw_order = ["Unresolved", "Vessel", "Icequake", "T-phase"]
+
+    for ax, (band, title_str) in zip(axes, band_configs):
+        band_data = umap_df[umap_df["detection_band"] == band]
+        n_total = len(band_data)
+
+        for cls in draw_order:
+            subset = band_data[band_data["event_class"] == cls]
+            if len(subset) == 0:
+                continue
+            ax.scatter(
+                subset["umap_1"], subset["umap_2"],
+                c=class_colors[cls],
+                s=class_size[cls],
+                alpha=class_alpha[cls],
+                edgecolors="none",
+                zorder=class_zorder[cls],
+                rasterized=True,
+                label=cls if band == "low" else None,  # legend only from first panel
+            )
+
+        ax.set_title(f"{title_str}  (n = {n_total:,})", fontsize=14, fontweight="bold", pad=8)
+        ax.set_xlabel("UMAP 1", fontsize=10)
+        ax.set_ylabel("UMAP 2", fontsize=10)
+        ax.tick_params(labelsize=9)
+        ax.set_facecolor("white")
+
+    # Shared legend on the right side
+    from matplotlib.lines import Line2D
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=class_colors["T-phase"],
+               markersize=8, label="T-phase", markeredgecolor="none"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=class_colors["Icequake"],
+               markersize=8, label="Icequake", markeredgecolor="none"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=class_colors["Vessel"],
+               markersize=8, label="Vessel", markeredgecolor="none"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=class_colors["Unresolved"],
+               markersize=8, label="Unresolved", markeredgecolor="none"),
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="center right",
+        bbox_to_anchor=(0.98, 0.5),
+        fontsize=11,
+        frameon=True,
+        fancybox=True,
+        edgecolor="0.7",
+        title="Class",
+        title_fontsize=12,
+    )
+
+    outpath = FIG_DIR / "umap_clustering_composite.png"
+    fig.savefig(outpath, dpi=300, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {outpath}")
+    return outpath
+
+
+# ========================================================================
 # Main
 # ========================================================================
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--figure", choices=["late_pick", "onset", "cluster", "completeness", "all"],
+    parser.add_argument("--figure", choices=["late_pick", "onset", "cluster", "completeness", "umap", "all"],
                         default="all")
     args = parser.parse_args()
 
@@ -627,6 +789,7 @@ def main():
         "onset": fig_onset_refinement_6panel,
         "cluster": fig_tphase_cluster_curated,
         "completeness": fig_magnitude_completeness,
+        "umap": fig_umap_clustering_composite,
     }
 
     if args.figure == "all":

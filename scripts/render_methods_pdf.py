@@ -100,32 +100,43 @@ def _embed_figures(html: str, fig_index: dict) -> str:
         if not png_refs:
             return bq_html
 
-        # Build image tags
-        img_tags = []
+        # Insert each image right after the </p> that contains its reference.
+        # This handles blockquotes with multiple figures (markdown sometimes
+        # merges consecutive blockquotes into one).
+        # Only embed for refs in a <p> that also contains "Figure:" —
+        # skip refs that appear in caption text (e.g. "available in ...").
         for ref in png_refs:
-            # Try exact match first, then just filename
+            ref_code = f'<code>{ref}</code>'
+            pos = bq_html.find(ref_code)
+            if pos == -1:
+                continue
+
+            # Find the enclosing <p>...</p> for this ref
+            p_start = bq_html.rfind('<p>', 0, pos)
+            p_end = bq_html.find('</p>', pos)
+            if p_start == -1 or p_end == -1:
+                continue
+            enclosing_p = bq_html[p_start:p_end]
+
+            # Only embed if this <p> is a figure title line
+            if 'Figure:' not in enclosing_p and 'Figure ' not in enclosing_p:
+                continue
+
             path = fig_index.get(ref) or fig_index.get(Path(ref).name)
-            if path and path.exists():
-                src = _crop_and_encode(path)
-                img_tags.append(
-                    f'<img src="{src}" '
-                    f'style="max-width:100%; margin:8pt 0; display:block;" />'
-                )
-            else:
-                img_tags.append(
-                    f'<p style="color:#c00; font-style:italic;">'
-                    f'[Figure not found: {ref}]</p>'
-                )
+            if not path or not path.exists():
+                err = (f'<p style="color:#c00; font-style:italic;">'
+                       f'[Figure not found: {ref}]</p>')
+                insert_pos = p_end + len('</p>')
+                bq_html = bq_html[:insert_pos] + '\n' + err + bq_html[insert_pos:]
+                continue
 
-        # Insert images after the first <p> (the title line)
-        # Find the end of the first </p> in the blockquote
-        first_p_end = bq_html.find('</p>')
-        if first_p_end == -1:
-            return bq_html
+            src = _crop_and_encode(path)
+            img_tag = (f'<img src="{src}" '
+                       f'style="max-width:100%; margin:8pt 0; display:block;" />')
+            insert_pos = p_end + len('</p>')
+            bq_html = bq_html[:insert_pos] + '\n' + img_tag + bq_html[insert_pos:]
 
-        insert_pos = first_p_end + len('</p>')
-        images_html = '\n'.join(img_tags)
-        return bq_html[:insert_pos] + '\n' + images_html + bq_html[insert_pos:]
+        return bq_html
 
     # Process each blockquote
     result = re.sub(
@@ -160,16 +171,19 @@ h2 {
     border-bottom: 1px solid #999;
     padding-bottom: 3pt;
     margin-top: 20pt;
+    page-break-after: avoid;
 }
 h3 {
     font-size: 12pt;
     margin-top: 16pt;
+    page-break-after: avoid;
 }
 table {
     border-collapse: collapse;
     width: 100%;
-    margin: 12pt 0;
+    margin: 10pt 0;
     font-size: 10pt;
+    page-break-inside: avoid;
 }
 th, td {
     border: 1px solid #999;
@@ -182,19 +196,22 @@ th {
 }
 blockquote {
     border-left: 3px solid #4a86c8;
-    margin: 14pt 0;
-    padding: 8pt 12pt;
+    margin: 10pt 0;
+    padding: 6pt 10pt;
     background-color: #f7f9fc;
     font-size: 10pt;
+    page-break-inside: auto;
 }
 blockquote strong {
     color: #2a5a8a;
 }
 blockquote img {
     max-width: 100%;
-    max-height: 7.5in;
-    margin: 8pt 0;
+    max-height: 7in;
+    margin: 6pt 0;
     object-fit: contain;
+    page-break-before: auto;
+    page-break-after: auto;
 }
 code {
     font-family: "DejaVu Sans Mono", "Courier New", monospace;
@@ -213,7 +230,7 @@ pre {
 hr {
     border: none;
     border-top: 1px solid #ccc;
-    margin: 20pt 0;
+    margin: 12pt 0;
 }
 em {
     color: #555;
