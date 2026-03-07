@@ -34,9 +34,10 @@ outputs are version-controlled.
 
 Each mooring records at 1 kHz (24-bit ADC, stored as 16-bit) in 4-hour
 segments (14,400,000 samples per file). The nominal duty cycle is ~8 hours
-on / ~40 hours off (~17% instantaneous), but actual coverage is ~5% per
-mooring over the 13-month deployment (717 files total across 6 moorings,
-~120 files per mooring × 4 hours = ~480 hours out of ~9,500 available).
+on / ~40 hours off (~17% instantaneous). The results presented here are
+based on a subset of the full archive: 717 files across 6 moorings (~24 GB
+of ~423 GB total), representing ~120 files per mooring × 4 hours = ~480
+hours of recordings.
 See the Data Sources section of the research constitution for complete
 instrument specifications.
 
@@ -351,16 +352,21 @@ median arrival delay consistent with ~40 km propagation at ~1.45 km/s.
 The vessel noise cluster is spectrally distinct from all seismic sources,
 occupying a separate region of feature space with no overlap.
 
-> **Figure: Cluster Montage — Vessel Noise** (`type_a_montage.png`)
+> **Figure: Vessel Noise Cluster — Representative Events** (`paper/vessel_cluster_curated.png`)
 >
-> **Temporary Caption:** Top 20 Type A broadband transients by SNR. Spectrograms show
-> characteristic positive spectral slope with peak energy above 100 Hz,
-> broad bandwidth (~211 Hz), and high frequency modulation — the acoustic
-> signature of propeller cavitation and ship machinery noise. Identified
-> as vessel traffic based on temporal burst pattern (~24 passages over
-> 13 months), multi-mooring simultaneity (47% of time bins have 2+ moorings
-> detecting), and seasonal correlation with krill fishing fleet activity
-> (peak May–Sep).
+> **Temporary Caption:** Six representative vessel noise events from the
+> Phase 1 unsupervised cluster, selected for high SNR and onset quality
+> across different moorings. Each panel shows highpass-filtered waveform
+> (top, 30–250 Hz) and spectrogram (bottom, 0–250 Hz). Red vertical line:
+> AIC-refined onset. Vessel noise is characterized by positive spectral
+> slope (energy increasing with frequency), peak energy above 100 Hz, and
+> broad bandwidth (~211 Hz) — the acoustic signature of propeller cavitation
+> and ship machinery. Identified as vessel traffic based on temporal burst
+> pattern (~24 passages over 13 months), multi-mooring simultaneity (47%
+> of time bins have 2+ moorings detecting), and seasonal correlation with
+> krill fishing fleet activity (peak May–Sep). A full 20-event montage
+> is available in supplementary materials (`type_a_montage.png`).
+> Spectrogram: nperseg=256, 87.5% overlap, Hann window.
 
 ### 4.2 Phase 2 — Supervised CNN+MLP
 
@@ -648,6 +654,19 @@ spatial outliers** flagged (median 174 km from centroid — clearly
 mislocated). These events are retained in the dataset but flagged for
 exclusion from spatial analyses.
 
+> **Figure: Swarm Coherence QC** (`paper/swarm_coherence_qc.png`)
+>
+> **Temporary Caption:** Swarm coherence quality control for located T-phase
+> events. (a) Map of swarm events colored by swarm membership, with 66
+> spatial outliers marked as red symbols. Outliers locate far from their
+> swarm centroids, consistent with mislocation due to multipath or onset
+> picking errors. White triangles: mooring positions. (b) Distribution of
+> distance from swarm centroid for all 9,443 swarm events. The 3× MAD
+> threshold (dashed vertical line) separates the coherent swarm population
+> from the outlier tail. Inliers (blue) cluster tightly around the
+> centroid; outliers (red) have a median distance of 174 km, confirming
+> they are mislocated rather than genuine off-centroid events.
+
 ### 6.3 Detection Completeness
 
 **Approach:** An acoustic magnitude of completeness (Mc) is estimated
@@ -722,12 +741,15 @@ catalogue of 18,505 events classified as earthquake (EQ, 2,253), icequake
 catalogue represents a substantial manual effort and provides valuable
 context for evaluating our automated approach.
 
-**Event matching:** Singer analyzed a larger set of recordings than our
-pipeline processed — only 8.4% of her events (1,559) fall within temporal
-windows covered by our 717 DAT files. Of these, we matched **1,275 (82%)**
-within a 30-second tolerance window. The high match rate and low median
-time offset (6.1 s) confirm that both methods are detecting the same
-physical events.
+**Event matching:** Singer's catalogue covers January–June 2019 (the first
+~5 months of the deployment). Our current pipeline processes a subset of
+the full recording archive (717 of ~6,000+ DAT files, 24 GB of ~423 GB),
+so temporal overlap is limited. Of Singer's events that fall within our
+processed recording windows, we matched **1,275 (82%)** within a 30-second
+tolerance. The high match rate and low median time offset (6.1 s) confirm
+that both methods are detecting the same physical events where data
+coverage overlaps. Match statistics will improve as the full archive is
+processed.
 
 **Complementary classification approaches:** Singer's catalogue employs
 a geographic classification framework, assigning EQ or IQ labels based

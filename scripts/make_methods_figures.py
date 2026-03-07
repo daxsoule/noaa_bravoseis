@@ -8,6 +8,7 @@ Produces:
   3. tphase_cluster_curated.png  — 2×3 T-phase cluster montage (§4.1)
   4. magnitude_completeness.png  — Cumulative freq vs. relative source level (§new)
   5. umap_clustering_composite.png — 1×3 UMAP projections colored by class (§4)
+  6. vessel_cluster_curated.png  — 2×3 vessel noise cluster montage (§4.2)
 
 Usage:
     uv run python scripts/make_methods_figures.py
@@ -16,6 +17,7 @@ Usage:
     uv run python scripts/make_methods_figures.py --figure cluster
     uv run python scripts/make_methods_figures.py --figure completeness
     uv run python scripts/make_methods_figures.py --figure umap
+    uv run python scripts/make_methods_figures.py --figure vessel
 """
 
 import argparse
@@ -775,13 +777,327 @@ def fig_umap_clustering_composite():
 
 
 # ========================================================================
+# Figure 6: Vessel noise cluster curated 2x3 montage (§4.2)
+# ========================================================================
+
+def fig_vessel_cluster_curated():
+    """Select 6 representative vessel noise events for a 2x3 curated montage.
+
+    Vessel noise = Type A broadband transients: positive spectral slope,
+    peak frequency > 100 Hz, broad bandwidth.  Events selected for high
+    onset quality (grade A preferred), good SNR, and mooring diversity.
+
+    Output: outputs/figures/paper/vessel_cluster_curated.png
+    """
+    print("=== Vessel Cluster Curated Montage ===")
+    cat = pd.read_parquet(DATA_DIR / "event_catalogue.parquet")
+    features = pd.read_parquet(DATA_DIR / "event_features.parquet")
+
+    # Identify vessel noise events: positive spectral slope, peak > 100 Hz
+    vessel_mask = (
+        (features["spectral_slope"] > 0)
+        & (features["peak_freq_hz"] > 100)
+    )
+    vessel_ids = set(features.loc[vessel_mask, "event_id"])
+    print(f"  Vessel candidates (slope > 0, peak > 100 Hz): {len(vessel_ids)}")
+
+    # Exclude T-phase events (safety check)
+    umap_df = pd.read_parquet(DATA_DIR / "umap_coordinates.parquet")
+    tphase_clusters = {"low_0", "low_1", "mid_0"}
+    tphase_ids = set(umap_df[umap_df["cluster_id"].isin(tphase_clusters)]["event_id"])
+    vessel_ids -= tphase_ids
+
+    # Merge catalogue + features for selection (avoid column collisions)
+    vessel_cat = cat[cat["event_id"].isin(vessel_ids)].copy()
+    feat_cols = ["event_id", "spectral_slope"]
+    # peak_freq_hz and bandwidth_hz exist in both; use catalogue versions
+    for col in ["peak_freq_hz", "bandwidth_hz"]:
+        if col not in vessel_cat.columns:
+            feat_cols.append(col)
+    vessel_cat = vessel_cat.merge(
+        features[feat_cols], on="event_id", how="left",
+    )
+
+    # Prefer grade A, high SNR, broad bandwidth (clear vessel signature)
+    grade_a = vessel_cat[
+        (vessel_cat["onset_grade"] == "A")
+        & (vessel_cat["snr"] > 5.0)
+        & (vessel_cat["bandwidth_hz"] > 150)
+    ].copy()
+    print(f"  Grade A, SNR > 5, bandwidth > 150 Hz: {len(grade_a)}")
+
+    # Fall back to grade A/B if too few
+    if len(grade_a) < 6:
+        grade_a = vessel_cat[
+            (vessel_cat["onset_grade"].isin(["A", "B"]))
+            & (vessel_cat["snr"] > 4.0)
+        ].copy()
+        print(f"  Relaxed to grade A/B, SNR > 4: {len(grade_a)}")
+
+    # Sort by SNR descending, then pick across different moorings
+    grade_a = grade_a.sort_values("snr", ascending=False)
+
+    selected = []
+    moorings_used = set()
+    # First pass: one per mooring (for diversity)
+    for _, row in grade_a.iterrows():
+        if row["mooring"] not in moorings_used:
+            selected.append(row)
+            moorings_used.add(row["mooring"])
+        if len(selected) >= 6:
+            break
+
+    # Second pass: fill remaining slots from best SNR
+    if len(selected) < 6:
+        for _, row in grade_a.iterrows():
+            if row["event_id"] not in {s["event_id"] for s in selected}:
+                selected.append(row)
+            if len(selected) >= 6:
+                break
+
+    events = pd.DataFrame(selected[:6]).reset_index(drop=True)
+    print(f"  Selected {len(events)} events:")
+    for _, ev in events.iterrows():
+        print(f"    {ev['mooring']}  SNR={ev['snr']:.1f}  grade={ev['onset_grade']}"
+              f"  slope={ev['spectral_slope']:.2f}  peak={ev['peak_freq_hz']:.0f} Hz"
+              f"  bw={ev['bandwidth_hz']:.0f} Hz")
+
+    # Load snippets with vessel-appropriate window (30 Hz high-pass waveform)
+    snippets = []
+    for _, ev in events.iterrows():
+        snip = _load_snippet(ev, window_sec=WINDOW_SEC)
+        if snip is not None:
+            # Re-filter waveform at 30 Hz high-pass for vessel band display
+            raw_snippet_len = len(snip["filtered"])
+            sos_hp = butter(4, 30, btype="high", fs=SAMPLE_RATE, output="sos")
+            # _load_snippet stores 'filtered' using the detection band filter;
+            # for vessel display we want a 30 Hz high-pass specifically.
+            # Reconstruct raw from time_s length and re-filter.
+            # Actually, detection_band == "high" already applies highpass at 30 Hz,
+            # so the existing filter is correct for vessel events.
+        snippets.append(snip)
+
+    # Plot: 2 rows x 3 columns
+    nrows, ncols = 2, 3
+    fig = plt.figure(figsize=(18, 8))
+    gs = GridSpec(nrows, ncols, figure=fig,
+                  hspace=0.35, wspace=0.25,
+                  top=0.92, bottom=0.06, left=0.06, right=0.96)
+
+    fig.suptitle("Vessel Noise Cluster — Representative Events",
+                 fontsize=14, fontweight="bold")
+
+    labels = [f"({chr(97 + i)})" for i in range(6)]  # (a) through (f)
+    for idx in range(min(len(events), nrows * ncols)):
+        ev = events.iloc[idx]
+        snip = snippets[idx]
+        if snip is None:
+            continue
+        row, col = idx // ncols, idx % ncols
+        _plot_panel(fig, gs[row, col], ev, snip,
+                    show_xlabel=(row == nrows - 1),
+                    show_ylabel=(col == 0),
+                    freq_max=250,
+                    panel_label=labels[idx])
+
+    outpath = FIG_DIR / "vessel_cluster_curated.png"
+    fig.savefig(outpath, dpi=300, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {outpath}")
+    return outpath
+
+
+# ========================================================================
+# Figure 7: Swarm coherence QC (section 6.2)
+# ========================================================================
+
+def fig_swarm_coherence_qc():
+    """Two-panel figure: (a) map of swarm events colored by swarm with outliers
+    marked, (b) histogram of distance-from-centroid showing the 3xMAD threshold."""
+    print("=== Swarm Coherence QC ===")
+
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+    from matplotlib.lines import Line2D
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+
+    # Load data
+    locations = pd.read_parquet(DATA_DIR / "event_locations.parquet")
+
+    # Filter to swarm events (swarm_id is not NaN)
+    swarm_events = locations[locations["swarm_id"].notna()].copy()
+    swarm_events["swarm_id"] = swarm_events["swarm_id"].astype(int)
+    print(f"  Swarm events: {len(swarm_events):,}")
+    print(f"  Unique swarms: {swarm_events['swarm_id'].nunique()}")
+    print(f"  Outliers: {swarm_events['swarm_outlier'].sum()}")
+
+    inliers = swarm_events[~swarm_events["swarm_outlier"]]
+    outliers = swarm_events[swarm_events["swarm_outlier"]]
+
+    # --- Compute per-swarm 3xMAD thresholds for the vertical line ---
+    swarm_thresholds = []
+    for sid, grp in swarm_events.groupby("swarm_id"):
+        if len(grp) >= 10:
+            dists = grp["swarm_dist_km"].values
+            med = np.median(dists)
+            mad = np.median(np.abs(dists - med))
+            threshold = med + 3 * mad
+            swarm_thresholds.append(threshold)
+    median_threshold = np.median(swarm_thresholds) if swarm_thresholds else 50.0
+    print(f"  Median per-swarm 3xMAD threshold: {median_threshold:.1f} km")
+
+    # --- Map projection ---
+    map_proj = ccrs.Mercator(central_longitude=-58.5)
+    data_crs = ccrs.PlateCarree()
+
+    # --- Figure ---
+    fig = plt.figure(figsize=(14, 6))
+    fig.subplots_adjust(left=0.06, right=0.96, top=0.92, bottom=0.10, wspace=0.30)
+
+    # ---- Panel (a): Map ----
+    ax_map = fig.add_subplot(1, 2, 1, projection=map_proj)
+
+    # Map extent — cover the array region and nearby outliers
+    MAP_LON_MIN, MAP_LON_MAX = -63.0, -54.5
+    MAP_LAT_MIN, MAP_LAT_MAX = -65.0, -60.5
+    ax_map.set_extent([MAP_LON_MIN, MAP_LON_MAX, MAP_LAT_MIN, MAP_LAT_MAX],
+                      crs=data_crs)
+
+    # Coastline and land
+    ax_map.add_feature(cfeature.LAND, facecolor="#d9d9d9", edgecolor="black",
+                       linewidth=0.5, zorder=2)
+    ax_map.coastlines(resolution="10m", linewidth=0.5, color="black", zorder=3)
+    ax_map.add_feature(cfeature.OCEAN, facecolor="#e8f0f8", zorder=1)
+
+    # Gridlines
+    gl = ax_map.gridlines(crs=data_crs, draw_labels=True,
+                          linewidth=0.4, color="gray", alpha=0.4, linestyle="--")
+    gl.top_labels = False
+    gl.right_labels = False
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    gl.xlabel_style = {"size": 9}
+    gl.ylabel_style = {"size": 9}
+
+    # Color swarm inliers by swarm_id with a cycling categorical palette
+    unique_swarms = sorted(inliers["swarm_id"].unique())
+    cmap_cat = plt.cm.tab20
+    swarm_color_map = {sid: cmap_cat(i % 20) for i, sid in enumerate(unique_swarms)}
+
+    # Plot inliers (small dots colored by swarm)
+    for sid in unique_swarms:
+        grp = inliers[inliers["swarm_id"] == sid]
+        color = swarm_color_map[sid]
+        ax_map.scatter(grp["lon"], grp["lat"],
+                       c=[color], s=6, alpha=0.5, edgecolors="none",
+                       transform=data_crs, zorder=5, rasterized=True)
+
+    # Plot outliers (red X markers)
+    if len(outliers) > 0:
+        ax_map.scatter(outliers["lon"], outliers["lat"],
+                       c="red", s=40, marker="x", linewidths=1.2,
+                       transform=data_crs, zorder=7)
+
+    # Mooring positions (white triangles with black edge)
+    for key, info in sorted(MOORINGS.items()):
+        ax_map.plot(info["lon"], info["lat"], marker="^", color="white",
+                    markersize=8, markeredgecolor="black", markeredgewidth=1.0,
+                    transform=data_crs, zorder=8)
+        ax_map.text(info["lon"] + 0.12, info["lat"] + 0.02, info["name"],
+                    fontsize=7, fontweight="bold", ha="left", va="center",
+                    transform=data_crs, zorder=8,
+                    bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
+                              alpha=0.8, edgecolor="none"))
+
+    # Legend
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#1f77b4",
+               markersize=5, label=f"Swarm events ({len(inliers):,})",
+               markeredgecolor="none"),
+        Line2D([0], [0], marker="x", color="red", markerfacecolor="red",
+               markersize=7, label=f"Outliers ({len(outliers)})",
+               linestyle="None", markeredgewidth=1.2),
+        Line2D([0], [0], marker="^", color="w", markerfacecolor="white",
+               markersize=8, label="Moorings",
+               markeredgecolor="black", markeredgewidth=1.0),
+    ]
+    ax_map.legend(handles=legend_handles, loc="lower left", fontsize=8,
+                  frameon=True, fancybox=True, edgecolor="0.7",
+                  bbox_to_anchor=(0.01, 0.01))
+
+    ax_map.set_title("(a) Swarm event locations", fontsize=14,
+                     fontweight="bold", pad=10)
+
+    # ---- Panel (b): Distance distribution ----
+    ax_hist = fig.add_subplot(1, 2, 2)
+
+    inlier_dists = inliers["swarm_dist_km"].dropna().values
+    outlier_dists = outliers["swarm_dist_km"].dropna().values
+
+    # Histogram bins
+    max_dist = max(
+        np.max(inlier_dists) if len(inlier_dists) > 0 else 1,
+        np.max(outlier_dists) if len(outlier_dists) > 0 else 1,
+    )
+    bins = np.linspace(0, min(max_dist, 300), 60)
+
+    ax_hist.hist(inlier_dists, bins=bins, color="#1f77b4", alpha=0.7,
+                 edgecolor="white", linewidth=0.3,
+                 label=f"Inliers (n = {len(inlier_dists):,})", zorder=3)
+    if len(outlier_dists) > 0:
+        ax_hist.hist(outlier_dists, bins=bins, color="#d62728", alpha=0.8,
+                     edgecolor="white", linewidth=0.3,
+                     label=f"Outliers (n = {len(outlier_dists)})", zorder=4)
+
+    # Median 3xMAD threshold line
+    ax_hist.axvline(median_threshold, color="black", linewidth=1.5,
+                    linestyle="--", zorder=5,
+                    label=f"Median 3$\\times$MAD = {median_threshold:.1f} km")
+
+    ax_hist.set_xlabel("Distance from swarm centroid (km)", fontsize=11)
+    ax_hist.set_ylabel("Number of events", fontsize=11)
+    ax_hist.set_title("(b) Distance from swarm centroid", fontsize=14,
+                      fontweight="bold", pad=10)
+    ax_hist.legend(fontsize=9, loc="upper right", frameon=True,
+                   fancybox=True, edgecolor="0.7")
+    ax_hist.tick_params(labelsize=10)
+    ax_hist.grid(True, alpha=0.3, axis="y")
+    ax_hist.set_xlim(0, min(max_dist * 1.05, 300))
+
+    # Summary stats inset
+    if len(outlier_dists) > 0:
+        summary_text = (
+            f"79 swarms, {len(swarm_events):,} events\n"
+            f"{len(outliers)} outliers flagged\n"
+            f"Outlier median: {np.median(outlier_dists):.0f} km"
+        )
+    else:
+        summary_text = (
+            f"79 swarms, {len(swarm_events):,} events\n"
+            f"{len(outliers)} outliers flagged"
+        )
+    ax_hist.text(0.97, 0.75, summary_text, transform=ax_hist.transAxes,
+                 fontsize=9, ha="right", va="top",
+                 bbox=dict(boxstyle="round,pad=0.4", facecolor="lightyellow",
+                           edgecolor="0.7", alpha=0.9))
+
+    outpath = FIG_DIR / "swarm_coherence_qc.png"
+    fig.savefig(outpath, dpi=300, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {outpath}")
+    return outpath
+
+
+# ========================================================================
 # Main
 # ========================================================================
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--figure", choices=["late_pick", "onset", "cluster", "completeness", "umap", "all"],
-                        default="all")
+    parser.add_argument("--figure", choices=[
+        "late_pick", "onset", "cluster", "completeness", "umap",
+        "vessel", "swarm_qc", "all",
+    ], default="all")
     args = parser.parse_args()
 
     figs = {
@@ -790,6 +1106,8 @@ def main():
         "cluster": fig_tphase_cluster_curated,
         "completeness": fig_magnitude_completeness,
         "umap": fig_umap_clustering_composite,
+        "vessel": fig_vessel_cluster_curated,
+        "swarm_qc": fig_swarm_coherence_qc,
     }
 
     if args.figure == "all":

@@ -37,11 +37,6 @@ CROP_FIGURES = {
     "detection_rate_timeline.png": 0.80,
     "duration_vs_peak_freq.png": 0.80,
     "example_detection_20190417_0919.png": 0.82,
-    "event_montage_tphase.png": 0.82,
-    "event_montage_icequake.png": 0.82,
-    "event_montage_vessel.png": 0.82,
-    "icequake_seaice_6panel.png": 0.85,
-    "sound_speed_profile.png": 0.85,
 }
 
 
