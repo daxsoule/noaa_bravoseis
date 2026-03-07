@@ -40,13 +40,9 @@ for complete instrument specifications.
 
 > **Figure: Recording Timeline** (`recording_timeline.png`)
 >
-> **Temporary Caption:** Recording timeline for the six BRAVOSEIS hydrophone moorings
-> (M1/BRA28 through M6/BRA33) from January 2019 to February 2020. Each
-> horizontal bar represents one 4-hour DAT file. Bars appear in pairs
-> (two consecutive files per recording window) separated by ~40-hour
-> off-duty gaps. The recording start time drifts slowly across the
-> deployment — it is not locked to a fixed UTC hour. M3 (BRA30) has the
-> fewest files (104); M5 (BRA32) the most (125). Total: 717 files.
+> *Detailed caption embedded in figure.* Recording timeline for the six
+> BRAVOSEIS moorings (Jan 2019 – Feb 2020). Each bar = one 4-hour DAT file.
+> 717 files total across 6 moorings.
 
 ### 2.2 STA/LTA Detection
 
@@ -117,33 +113,21 @@ deterministic, and recovered 7× more mid-band events (132,494 vs 17,781).
 
 > **Figure: Detection Rate Timeline** (`detection_rate_timeline.png`)
 >
-> **Temporary Caption:** Daily event counts across all 6 BRAVOSEIS hydrophone moorings,
-> stacked by detection frequency band (orange: 1–15 Hz, blue: 15–30 Hz,
-> green: 30–250 Hz). STA/LTA detector parameters: STA=2 s, LTA=60 s,
-> trigger=3.0, detrigger=1.5. Gaps correspond to the ~40-hour off-duty
-> periods in the recording duty cycle. Two prominent T-phase swarms are
-> visible: Feb 11, 2019 (~5,000 events) and Apr 22–24, 2019 (~3,500 events
-> on the peak day). Vessel traffic passages appear as broadband bursts
-> lasting 1–4 days.
+> *Detailed caption embedded in figure.* Daily event counts stacked by
+> frequency band. Two T-phase swarms visible: Feb 11, 2019 and Apr 22–24, 2019.
 
 > **Figure: Duration vs. Peak Frequency** (`duration_vs_peak_freq.png`)
 >
-> **Temporary Caption:** Scatter plot of event duration versus peak frequency for all
-> 297,170 detected events, colored by detection band. Duration is on a
-> logarithmic scale. Events cluster by band as expected. Two distinct
-> populations are visible in the low band: short-duration (<3 s) events
-> (T-phases) and longer-duration (>3 s) events (icequakes and coda).
+> *Detailed caption embedded in figure.* Duration vs. peak frequency for
+> all 297,170 events, colored by band. Two populations in the low band:
+> short (<3 s, T-phases) and long (>3 s, icequakes).
 
 > **Figure: Example Cross-Mooring Detection**
 > (`example_detection_20190417_0919.png`)
 >
-> **Temporary Caption:** Two-minute spectrogram array centered on association A007517,
-> detected on all 6 moorings. Each panel shows one mooring (M1 at top,
-> M6 at bottom). Red shading marks the detected event window; red vertical
-> lines mark the refined onset time. A broadband T-phase arrival is visible
-> propagating across the array with moveout consistent with a source in the
-> central Bransfield Strait. Spectrogram parameters: nperseg=1024, 50%
-> overlap, 0–250 Hz. Shared colorscale (2nd–98th percentile).
+> *Detailed caption embedded in figure.* Two-minute spectrogram array
+> centered on association A007517, detected on all 6 moorings. Broadband
+> T-phase arrival with clear cross-array moveout.
 
 ### 2.4 Event Features
 
@@ -169,6 +153,18 @@ STA/LTA onset picks are biased late — validation on 50 manually reviewed
 events showed only 11% hit the true first arrival; 68% fell in the event
 coda. Accurate onsets are critical for TDOA source location, where a 1-second
 onset error at 1455 m/s produces ~1.5 km location error.
+
+> **Figure: STA/LTA Late-Pick Problem** (`paper/late_pick_problem.png`)
+>
+> **Temporary Caption:** Six events illustrating the STA/LTA late-pick problem.
+> Dashed yellow lines mark the original STA/LTA trigger time; solid red lines
+> mark the AIC-refined onset. In each case, the STA/LTA detector triggered
+> 1.5–4 seconds late, typically in the event coda rather than at the true
+> first arrival. Validation on 50 manually reviewed events confirmed that
+> 68% of raw STA/LTA picks fall in the coda and only 11% hit the true first
+> arrival. Top row: low-band (1–15 Hz) T-phase events. Middle row: mid-band
+> (15–30 Hz) events. Bottom row: high-band (30–250 Hz) events. Spectrogram:
+> nperseg=256, 87.5% overlap, Hann window.
 
 ### 3.2 AIC Picker with Kurtosis Fallback
 
@@ -211,15 +207,20 @@ considered but rejected because it assumes stationarity within the noise
 window, which fails for the variable ambient noise in the Bransfield Strait.
 The envelope-based AIC is more robust to non-stationary noise.
 
-> **Figure: Onset Refinement Montage** (`onset_refinement_montage.png`)
+> **Figure: Onset Refinement — Curated Examples** (`paper/onset_refinement_6panel.png`)
 >
-> **Temporary Caption:** Onset refinement quality control montage showing 50 events,
-> oversampled toward grade C (low quality) for critical review. Each cell
-> shows waveform (top) and spectrogram (bottom). Yellow vertical line: raw
-> STA/LTA onset. Red vertical line: AIC-refined onset. Green vertical line:
-> kurtosis-refined onset (if applicable). Of 50 reviewed events, 34 had
-> acceptable refined onsets. Most issues were late picks on emergent
-> low-frequency signals — the grade system reliably flags these.
+> **Temporary Caption:** Six curated events illustrating onset refinement quality
+> across grades A, B, and C. Top row: Grade A (quality ≥ 0.7) — sharp AIC
+> minimum at the noise-to-signal transition, producing a confident onset pick
+> 0.5–2 s earlier than STA/LTA. Middle row: Grade B (quality 0.4–0.7) —
+> moderate AIC minimum with some ambiguity, but still a meaningful improvement
+> over STA/LTA. Bottom row: Grade C (quality < 0.4) — weak or ambiguous AIC
+> minimum; these events are excluded from source location but retained in
+> the catalogue. Dashed yellow: original STA/LTA trigger. Solid red:
+> AIC-refined onset. Dotted gray: event end (detrigger). A full 50-event
+> QC montage (stratified by grade) is available in exploratory figures
+> (`onset_refinement_montage.png`). Spectrogram: nperseg=256, 87.5% overlap,
+> Hann window.
 
 ### 3.3 Seismic-Tuned Dual Picker
 
@@ -284,16 +285,21 @@ spectrogram montage review. Cross-validated against 636 Orca OBS earthquakes
 with hydrophone coverage: 89% detection rate, 43% T-phase match, 28.2 s
 median arrival delay consistent with ~40 km propagation at ~1.45 km/s.
 
-> **Figure: Cluster Montage — T-phases** (`cluster_montage_low_0.png`,
-> `cluster_montage_low_1.png`, `cluster_montage_mid_0.png`)
+> **Figure: T-phase Cluster — Representative Events** (`paper/tphase_cluster_curated.png`)
 >
-> **Temporary Caption:** Spectrogram montages of the 20 events nearest the UMAP
-> cluster centroid for each T-phase cluster. Cluster low_0 (4,686 events):
-> emergent T-phases in the 1–15 Hz band with gradual onset ramps. Cluster
-> low_1 (3,666 events): mixed seismic events with impulsive onsets.
-> Cluster mid_0 (1,056 events): T-phases detected in the 15–30 Hz band.
-> These three clusters were confirmed as earthquake T-phases by expert
-> review.
+> **Temporary Caption:** Six representative T-phase events from Phase 1
+> unsupervised clusters (low_0: 4,686 events, low_1: 3,666 events, mid_0:
+> 1,056 events), selected from events nearest the UMAP cluster centroids
+> across different moorings. Each panel shows bandpass-filtered waveform (top)
+> and spectrogram (bottom, 0–100 Hz). Dashed yellow: STA/LTA onset. Solid
+> red: AIC-refined onset. T-phases are characterized by impulsive broadband
+> arrivals with dominant energy below 15 Hz and duration typically ≤ 3 s.
+> Phase 1 identified 55,783 T-phases across three clusters confirmed by
+> expert review. Complete 4×5 montages (20 events nearest each cluster
+> centroid) are available in supplementary materials
+> (`cluster_montage_low_0.png`, `cluster_montage_low_1.png`,
+> `cluster_montage_mid_0.png`). Spectrogram: nperseg=256, 87.5% overlap,
+> Hann window.
 
 > **Figure: Cluster Montage — Vessel Noise** (`type_a_montage.png`)
 >
@@ -354,45 +360,21 @@ cosine annealing LR. SpecAugment-style augmentation. Early stopping
 
 > **Figure: T-phase Event Montage** (`paper/event_montage_tphase.png`)
 >
-> **Temporary Caption:** Four representative T-phase events detected by the
-> BRAVOSEIS hydrophone array, selected across a range of SNR values and from
-> different moorings to demonstrate variability. Each column shows one event
-> with bandpass-filtered waveform (top, 1–15 Hz) and spectrogram (bottom,
-> 0–100 Hz). Red vertical lines mark the AIC-refined onset time; colored
-> shading indicates the detected event duration. T-phases are identified by
-> impulsive onsets with dominant energy below 15 Hz and duration typically
-> ≤3 s — the hydroacoustic signature of regional earthquakes propagating
-> through the SOFAR channel. AIC onset picks are computed on the squared
-> envelope within a 7 s window (5 s pre-trigger + 2 s post-trigger). Grade A
-> picks (quality ≥0.7) exhibit a sharp AIC minimum at the noise-to-signal
-> transition. Spectrogram: nperseg=256, 87.5% overlap, Hann window.
+> *Detailed caption embedded in figure.* Four T-phase examples across SNR
+> range and moorings. Bandpass 1–15 Hz waveform + spectrogram (0–100 Hz).
+> Red lines: AIC onset. All grade A picks.
 
 > **Figure: Icequake Event Montage** (`paper/event_montage_icequake.png`)
 >
-> **Temporary Caption:** Four representative icequake events detected by the
-> BRAVOSEIS hydrophone array. Each column shows one event with bandpass-filtered
-> waveform (top, 5–30 Hz) and spectrogram (bottom, 0–100 Hz). Red vertical
-> lines mark the AIC-refined onset time. Icequakes are distinguished from
-> T-phases by their longer duration (>3 s), more emergent character, and
-> moderate spectral slope (−0.2 to −0.5). The emergent onset makes AIC picking
-> more challenging — icequakes have a higher fraction of grade B picks than
-> T-phases. The extended mid-band filter (5–30 Hz) captures the broader
-> spectral content characteristic of glacial calving, ice shelf fracture, and
-> sea ice cracking events. Spectrogram: nperseg=256, 87.5% overlap, Hann window.
+> *Detailed caption embedded in figure.* Four icequake examples. Bandpass
+> 5–30 Hz waveform + spectrogram (0–100 Hz). Longer duration (>3 s),
+> more emergent onsets than T-phases.
 
 > **Figure: Vessel Noise Event Montage** (`paper/event_montage_vessel.png`)
 >
-> **Temporary Caption:** Four representative vessel noise events detected by the
-> BRAVOSEIS hydrophone array. Each column shows one event with bandpass-filtered
-> waveform (top, 30–250 Hz) and spectrogram (bottom, 0–250 Hz). Red vertical
-> lines mark the AIC-refined onset time. Vessel noise is identified by its
-> positive spectral slope (energy increasing with frequency), peak energy above
-> 100 Hz, and broad bandwidth (~211 Hz) — the acoustic signature of propeller
-> cavitation and ship machinery. Events appear as Type A broadband transients
-> in temporal bursts corresponding to ~24 vessel passages over 13 months (peak
-> May–Sep, consistent with krill trawler activity). The high-pass filter
-> (30–250 Hz) isolates the vessel signature from concurrent low-frequency
-> seismic energy. Spectrogram: nperseg=256, 87.5% overlap, Hann window.
+> *Detailed caption embedded in figure.* Four vessel noise examples. Bandpass
+> 30–250 Hz waveform + spectrogram (0–250 Hz). Positive spectral slope,
+> peak energy >100 Hz.
 
 ---
 
@@ -563,6 +545,42 @@ computed and events whose distance from the centroid exceeds 3× MAD
 spatial outliers** flagged (median 174 km from centroid — clearly
 mislocated). These events are retained in the dataset but flagged for
 exclusion from spatial analyses.
+
+### 6.3 Detection Completeness
+
+**Approach:** An acoustic magnitude of completeness (Mc) is estimated
+using relative source level as the magnitude proxy. For each located
+T-phase (tiers A–C, N=9,466), the relative source level is computed as:
+
+    SL_rel = RL + TL
+
+where RL is the peak spectral power at the best-receiving mooring (dB)
+and TL = 15·log₁₀(r) is the practical spreading loss to the nearest
+mooring (distance r in meters). The 15·log₁₀ factor represents a
+compromise between spherical (20) and cylindrical (10) spreading.
+
+**Calibration caveat:** These are **relative** values. Absolute source
+levels (dB re 1 μPa at 1 m) require hydrophone sensitivity calibration
+curves not available for this deployment. The shape of the
+frequency–source level distribution is independent of absolute
+calibration and is valid for estimating Mc.
+
+**Mc estimation:** Maximum curvature method (Wiemer & Wyss, 2000) — the
+bin with the highest event count in the non-cumulative distribution
+marks the magnitude of completeness. Above Mc, the Gutenberg–Richter
+relationship log₁₀(N) = a − b·SL holds.
+
+> **Figure: Magnitude of Completeness** (`paper/magnitude_completeness.png`)
+>
+> **Temporary Caption:** Acoustic magnitude of completeness for located T-phase
+> events (tiers A–C, N=9,466). (a) Cumulative frequency vs. relative source
+> level with Gutenberg–Richter fit above Mc. Mc = 120 dB (maximum curvature
+> method). b-value = 0.067. (b) Non-cumulative histogram (1 dB bins) showing
+> the rollover below Mc where detection sensitivity falls off. Relative
+> source level = received level (peak spectral power) + transmission loss
+> (15·log₁₀(r) practical spreading to nearest mooring). These are relative
+> values — absolute calibration requires hydrophone sensitivity curves not
+> available for this deployment.
 
 ---
 

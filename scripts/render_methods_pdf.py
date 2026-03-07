@@ -150,14 +150,15 @@ blockquote {
     padding: 8pt 12pt;
     background-color: #f7f9fc;
     font-size: 10pt;
-    page-break-inside: avoid;
 }
 blockquote strong {
     color: #2a5a8a;
 }
 blockquote img {
     max-width: 100%;
+    max-height: 7.5in;
     margin: 8pt 0;
+    object-fit: contain;
 }
 code {
     font-family: "DejaVu Sans Mono", "Courier New", monospace;
