@@ -117,6 +117,9 @@ deterministic, and recovered 7× more mid-band events (132,494 vs 17,781).
 | High (30–250 Hz) | 79,978 |
 | **Total** | **297,170** |
 
+The daily detection rate over the deployment shows clear temporal structure,
+including two prominent T-phase swarms and intermittent vessel traffic.
+
 > **Figure: Detection Rate Timeline** (`detection_rate_timeline.png`)
 >
 > **Temporary Caption:** Daily event counts across all six BRAVOSEIS hydrophone
@@ -128,6 +131,9 @@ deterministic, and recovered 7× more mid-band events (132,494 vs 17,781).
 > April 22–24, 2019 (~3,500 events on the peak day). Vessel traffic
 > passages appear as broadband bursts lasting 1–4 days.
 
+The detected events occupy distinct regions of duration–frequency space,
+confirming that the three-band strategy captures different source populations.
+
 > **Figure: Duration vs. Peak Frequency** (`duration_vs_peak_freq.png`)
 >
 > **Temporary Caption:** Scatter plot of event duration versus peak frequency
@@ -135,6 +141,9 @@ deterministic, and recovered 7× more mid-band events (132,494 vs 17,781).
 > a logarithmic scale. Events separate cleanly by detection band. Two distinct
 > populations are visible in the low band: short-duration (< 3 s) events
 > (T-phases) and longer-duration (> 3 s) events (icequakes and coda).
+
+A representative multi-mooring detection illustrates how the same event
+propagates across the array with measurable moveout.
 
 > **Figure: Example Cross-Mooring Detection**
 > (`example_detection_20190417_0919.png`)
@@ -319,6 +328,9 @@ median arrival delay consistent with ~40 km propagation at ~1.45 km/s.
 > `cluster_montage_mid_0.png`). Spectrogram: nperseg=256, 87.5% overlap,
 > Hann window.
 
+The vessel noise cluster is spectrally distinct from all seismic sources,
+occupying a separate region of feature space with no overlap.
+
 > **Figure: Cluster Montage — Vessel Noise** (`type_a_montage.png`)
 >
 > **Temporary Caption:** Top 20 Type A broadband transients by SNR. Spectrograms show
@@ -368,6 +380,9 @@ cosine annealing LR. SpecAugment-style augmentation. Early stopping
 | Vessel | 10,458 | 29,280 | **39,738** |
 | Low-confidence | — | 16,182 | 16,182 |
 
+The confusion matrix reveals the main classification failure mode: a
+small fraction of T-phases are misclassified as vessel noise or icequakes.
+
 > **Figure: CNN Confusion Matrix** (`cnn_confusion_matrix.png`)
 >
 > **Temporary Caption:** Confusion matrix for the hybrid CNN+MLP classifier on the
@@ -375,6 +390,10 @@ cosine annealing LR. SpecAugment-style augmentation. Early stopping
 > 93.7%. Main confusion: 400 T-phases predicted as vessel (4.8% of
 > T-phase support) and 249 T-phases predicted as icequake (3.0%). Icequake
 > and vessel classes have near-perfect recall (≥1.00).
+
+The following three montages show representative examples of each event
+class, illustrating the spectral and temporal characteristics that
+distinguish them.
 
 > **Figure: T-phase Event Montage** (`paper/event_montage_tphase.png`)
 >
