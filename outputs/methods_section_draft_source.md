@@ -715,21 +715,29 @@ detection threshold.
 
 ### 7.2 Comparison with Singer Manual Catalogue
 
-Jackie Singer (NOAA) independently analyzed the same hydrophone data using
-manual spectrogram inspection and picking, producing a catalogue of 18,505
-events classified as earthquake (EQ, 2,253), icequake (IQ, 13,797),
-unknown (IDK, 2,010), and seismic swarm (SS, ~700).
+Singer (NOAA/PMEL) independently analyzed the same hydrophone data using
+manual spectrogram inspection and picking, producing a comprehensive
+catalogue of 18,505 events classified as earthquake (EQ, 2,253), icequake
+(IQ, 13,797), unknown (IDK, 2,010), and seismic swarm (SS, ~700). This
+catalogue represents a substantial manual effort and provides valuable
+context for evaluating our automated approach.
 
-This catalogue provides a direct methods comparison: same data, different
-analysis approach (manual vs. automated). Singer analyzed a larger set of
-recordings than our pipeline processed — only 8.4% of her events (1,559)
-fall within temporal windows covered by our 717 DAT files. Of these, we
-matched **1,275 (82%)** within a 30-second tolerance window. Median time
-offset between catalogues: 6.1 seconds.
+**Event matching:** Singer analyzed a larger set of recordings than our
+pipeline processed — only 8.4% of her events (1,559) fall within temporal
+windows covered by our 717 DAT files. Of these, we matched **1,275 (82%)**
+within a 30-second tolerance window. The high match rate and low median
+time offset (6.1 s) confirm that both methods are detecting the same
+physical events.
 
-**Key finding — Singer's EQ/IQ distinction is geographic, not spectral:**
-Singer's EQ and IQ labels map to our three classes with nearly identical
-distributions:
+**Complementary classification approaches:** Singer's catalogue employs
+a geographic classification framework, assigning EQ or IQ labels based
+in part on event location relative to the mooring network and coastline.
+Our automated pipeline classifies events using quantitative spectral
+criteria (duration, spectral slope, peak frequency). These represent
+different — and complementary — analytical philosophies.
+
+The cross-comparison reveals that Singer's EQ and IQ labels map to our
+three classes with similar distributions:
 
 | Singer label | → Our T-phase | → Our icequake | → Our vessel |
 |-------------|---------------|----------------|-------------|
@@ -737,43 +745,48 @@ distributions:
 | IQ (847 matched) | 66% | 18% | 16% |
 | IDK (155 matched) | 68% | 19% | 13% |
 
-All three of Singer's categories produce the same ~2:1:1 split across our
-classes. This indicates her EQ/IQ separation was based primarily on
-geographic criteria (in-network location vs. coastal proximity) rather than
-waveform characteristics. Our feature-based classification — using
-duration, spectral slope, and peak frequency — provides a physically
-grounded distinction between impulsive tectonic T-phases (≤3 s, steep
-negative slope) and emergent cryogenic events (>3 s, moderate slope).
+The similar distributions across all three of Singer's categories suggest
+that the two classification schemes are capturing different axes of
+variation in the event population. Singer's geographic approach groups
+events by spatial context, while our spectral approach groups them by
+waveform characteristics. Both provide useful information — geographic
+context is important for interpretation, while spectral characteristics
+relate more directly to physical source mechanisms.
 
-**Temporal evidence:** Panel (b) of the comparison figure shows that
-Singer's EQ and IQ detections both track our T-phase monthly pattern
-closely. The absence of a seasonal icequake signal in Singer's data is
-consistent with the interpretation that her classification did not
-separate tectonic from cryogenic sources using waveform criteria.
+**Value added by spectral classification:** The automated pipeline
+introduces a quantitative distinction between impulsive tectonic T-phases
+(duration ≤3 s, spectral slope < −0.5) and emergent cryogenic events
+(duration >3 s, slope −0.2 to −0.5) that is difficult to apply
+consistently in manual analysis. Panel (b) of the comparison figure shows
+that Singer's EQ and IQ detections both track our T-phase monthly pattern,
+while our icequake population exhibits a distinct austral summer peak
+consistent with seasonal calving and ice fracture activity. This
+seasonal separation provides independent physical evidence supporting the
+spectral classification boundaries.
 
-**Feature-space evidence:** Panel (c) shows Singer's EQ and IQ events
-scattered broadly across duration–spectral slope space, with extensive
-overlap. Our classification boundaries (duration ≤3 s and slope < −0.5
-for T-phase) partition this continuum into physically interpretable
-populations that Singer's geographic approach does not resolve.
+**Feature-space context:** Panel (c) shows that Singer's EQ and IQ events
+occupy overlapping regions of duration–spectral slope space. The automated
+classification boundaries partition this continuum into populations with
+distinct temporal and spatial signatures, adding a waveform-based
+dimension to the geographic framework established by Singer's manual
+analysis.
 
 > **Figure: Ground Truth — Singer Comparison** (`paper/ground_truth_singer.png`)
 >
-> **Temporary Caption:** Comparison between our automated classification and
-> Singer's manual catalogue (18,505 events from the same hydrophone data,
-> 1,275 matched within data-coverage overlap). (a) Classification
-> cross-comparison: Singer's labels (rows) vs. our labels (columns) for
-> matched events. Singer's EQ, IQ, and IDK categories all map to our
-> classes with nearly identical distributions (~66% T-phase, ~19% icequake,
-> ~14% vessel), indicating her EQ/IQ distinction was geographic rather than
-> spectral. (b) Monthly event counts: Singer EQ and IQ (bars, left axis)
+> **Temporary Caption:** Comparison between our automated spectral
+> classification and Singer's manual geographic catalogue (18,505 events
+> from the same hydrophone data, 1,275 matched within data-coverage
+> overlap). (a) Classification cross-comparison: Singer's labels (rows)
+> vs. our labels (columns) for matched events. All three of Singer's
+> categories map to our classes with similar distributions, reflecting the
+> complementary nature of geographic vs. spectral classification
+> approaches. (b) Monthly event counts: Singer EQ and IQ (bars, left axis)
 > overlaid with our T-phase and icequake detections (lines, right axis).
-> Both Singer categories track our T-phase temporal pattern. (c) Duration
-> vs. spectral slope for matched events colored by Singer's label, showing
-> extensive overlap between her EQ and IQ populations in feature space. Our
-> classification boundaries (dashed lines) partition this continuum into
-> T-phase (short, steep slope) and icequake (long, moderate slope)
-> populations.
+> Our icequake population shows a seasonal signal (summer peak) not
+> resolved by the geographic classification. (c) Duration vs. spectral
+> slope for matched events colored by Singer's label, illustrating the
+> overlapping feature-space distributions that the automated spectral
+> boundaries partition into physically interpretable populations.
 
 ---
 
