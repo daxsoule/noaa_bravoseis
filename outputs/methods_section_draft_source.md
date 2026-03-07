@@ -33,16 +33,22 @@ outputs are version-controlled.
 ### 2.1 Instrument and Data Format
 
 Each mooring records at 1 kHz (24-bit ADC, stored as 16-bit) in 4-hour
-segments (14,400,000 samples per file). The duty cycle is ~8 hours on /
-~40 hours off, yielding ~5% temporal coverage per mooring over 13 months
-(717 files total across 6 moorings). See §Data Sources in the constitution
-for complete instrument specifications.
+segments (14,400,000 samples per file). The nominal duty cycle is ~8 hours
+on / ~40 hours off (~17% instantaneous), but actual coverage is ~5% per
+mooring over the 13-month deployment (717 files total across 6 moorings,
+~120 files per mooring × 4 hours = ~480 hours out of ~9,500 available).
+See the Data Sources section of the research constitution for complete
+instrument specifications.
 
 > **Figure: Recording Timeline** (`recording_timeline.png`)
 >
-> *Detailed caption embedded in figure.* Recording timeline for the six
-> BRAVOSEIS moorings (Jan 2019 – Feb 2020). Each bar = one 4-hour DAT file.
-> 717 files total across 6 moorings.
+> **Temporary Caption:** Recording timeline for the six BRAVOSEIS hydrophone
+> moorings (M1/BRA28 through M6/BRA33) from January 2019 to February 2020.
+> Each horizontal bar represents one 4-hour DAT file. Bars appear in pairs
+> (two consecutive files per recording window) separated by ~40-hour off-duty
+> gaps. The recording start time drifts slowly across the deployment — it is
+> not locked to a fixed UTC hour. M3 (BRA30) has the fewest files (104);
+> M5 (BRA32) the most (125). Total: 717 files.
 
 ### 2.2 STA/LTA Detection
 
@@ -93,8 +99,8 @@ in multiple passes is resolved during the downstream classification phase.
 - **15 Hz:** Separates the dominant seismic/T-phase energy from the mid band.
   Average spectral profiles across all moorings confirmed the dominant energy
   peak below 15–20 Hz.
-- **30 Hz:** Separates the fin whale / low icequake regime from higher
-  biological and cryogenic signals.
+- **30 Hz:** Separates the fin whale and low-frequency icequake regime from
+  higher biological and cryogenic signals.
 - These are **energy-regime boundaries**, not signal-type boundaries. A single
   broadband icequake may trigger in all three passes.
 
@@ -113,21 +119,33 @@ deterministic, and recovered 7× more mid-band events (132,494 vs 17,781).
 
 > **Figure: Detection Rate Timeline** (`detection_rate_timeline.png`)
 >
-> *Detailed caption embedded in figure.* Daily event counts stacked by
-> frequency band. Two T-phase swarms visible: Feb 11, 2019 and Apr 22–24, 2019.
+> **Temporary Caption:** Daily event counts across all six BRAVOSEIS hydrophone
+> moorings, stacked by detection frequency band (orange: 1–15 Hz, blue:
+> 15–30 Hz, green: 30–250 Hz). STA/LTA detector parameters: STA = 2 s,
+> LTA = 60 s, trigger = 3.0, detrigger = 1.5. Gaps correspond to the
+> ~40-hour off-duty periods in the recording duty cycle. Two prominent
+> T-phase swarms are visible: February 11, 2019 (~5,000 events) and
+> April 22–24, 2019 (~3,500 events on the peak day). Vessel traffic
+> passages appear as broadband bursts lasting 1–4 days.
 
 > **Figure: Duration vs. Peak Frequency** (`duration_vs_peak_freq.png`)
 >
-> *Detailed caption embedded in figure.* Duration vs. peak frequency for
-> all 297,170 events, colored by band. Two populations in the low band:
-> short (<3 s, T-phases) and long (>3 s, icequakes).
+> **Temporary Caption:** Scatter plot of event duration versus peak frequency
+> for all 297,170 detected events, colored by detection band. Duration is on
+> a logarithmic scale. Events separate cleanly by detection band. Two distinct
+> populations are visible in the low band: short-duration (< 3 s) events
+> (T-phases) and longer-duration (> 3 s) events (icequakes and coda).
 
 > **Figure: Example Cross-Mooring Detection**
 > (`example_detection_20190417_0919.png`)
 >
-> *Detailed caption embedded in figure.* Two-minute spectrogram array
-> centered on association A007517, detected on all 6 moorings. Broadband
-> T-phase arrival with clear cross-array moveout.
+> **Temporary Caption:** Two-minute spectrogram array centered on association
+> A007517, detected on all six moorings. Each panel shows one mooring (M1 at
+> top, M6 at bottom). Red shading marks the detected event window; red
+> vertical lines mark the refined onset time. A broadband T-phase arrival is
+> visible propagating across the array with moveout consistent with a source
+> in the central Bransfield Strait. Spectrogram parameters: nperseg = 1024,
+> 50% overlap, 0–250 Hz. Shared colorscale (2nd–98th percentile).
 
 ### 2.4 Event Features
 
@@ -341,7 +359,7 @@ cosine annealing LR. SpecAugment-style augmentation. Early stopping
 | Icequake | 0.93 | 1.00 | 0.96 | 3,435 |
 | Vessel | 0.80 | 1.00 | 0.89 | 1,595 |
 
-**Bulk population results (207,528 events):**
+**Combined population results (Phase 1 + Phase 2):**
 
 | Class | Phase 1 | Phase 2 (high-conf) | Combined |
 |-------|---------|---------------------|----------|
@@ -360,21 +378,66 @@ cosine annealing LR. SpecAugment-style augmentation. Early stopping
 
 > **Figure: T-phase Event Montage** (`paper/event_montage_tphase.png`)
 >
-> *Detailed caption embedded in figure.* Four T-phase examples across SNR
-> range and moorings. Bandpass 1–15 Hz waveform + spectrogram (0–100 Hz).
-> Red lines: AIC onset. All grade A picks.
+> **Temporary Caption:** Four representative T-phase events detected by the
+> BRAVOSEIS hydrophone array, selected across a range of SNR values and from
+> different moorings to demonstrate variability. Each column shows one event
+> with bandpass-filtered waveform (top, 1–15 Hz) and spectrogram (bottom,
+> 0–100 Hz). Red vertical lines mark the AIC-refined onset time; colored
+> shading indicates the detected event duration. T-phases are identified by
+> impulsive onsets with dominant energy below 15 Hz and duration typically
+> ≤ 3 s — the hydroacoustic signature of regional earthquakes propagating
+> through the SOFAR channel. AIC onset picks are computed on the squared
+> envelope within a 7 s window (5 s pre-trigger + 2 s post-trigger). Grade A
+> picks (quality ≥ 0.7) exhibit a sharp AIC minimum at the noise-to-signal
+> transition. Spectrogram: nperseg = 256, 87.5% overlap, Hann window.
 
 > **Figure: Icequake Event Montage** (`paper/event_montage_icequake.png`)
 >
-> *Detailed caption embedded in figure.* Four icequake examples. Bandpass
-> 5–30 Hz waveform + spectrogram (0–100 Hz). Longer duration (>3 s),
-> more emergent onsets than T-phases.
+> **Temporary Caption:** Four representative icequake events detected by the
+> BRAVOSEIS hydrophone array. Each column shows one event with
+> bandpass-filtered waveform (top, 5–30 Hz) and spectrogram (bottom,
+> 0–100 Hz). Red vertical lines mark the AIC-refined onset time. Icequakes
+> are distinguished from T-phases by their longer duration (> 3 s), more
+> emergent character, and moderate spectral slope (−0.2 to −0.5). The
+> emergent onset makes AIC picking more challenging — icequakes have a higher
+> fraction of grade B picks than T-phases. The extended mid-band filter
+> (5–30 Hz) captures the broader spectral content characteristic of glacial
+> calving, ice shelf fracture, and sea ice cracking events. Spectrogram:
+> nperseg = 256, 87.5% overlap, Hann window.
 
 > **Figure: Vessel Noise Event Montage** (`paper/event_montage_vessel.png`)
 >
-> *Detailed caption embedded in figure.* Four vessel noise examples. Bandpass
-> 30–250 Hz waveform + spectrogram (0–250 Hz). Positive spectral slope,
-> peak energy >100 Hz.
+> **Temporary Caption:** Four representative vessel noise events detected by
+> the BRAVOSEIS hydrophone array. Each column shows one event with
+> bandpass-filtered waveform (top, 30–250 Hz) and spectrogram (bottom,
+> 0–250 Hz). Red vertical lines mark the AIC-refined onset time. Vessel
+> noise is identified by its positive spectral slope (energy increasing with
+> frequency), peak energy above 100 Hz, and broad bandwidth (~211 Hz) — the
+> acoustic signature of propeller cavitation and ship machinery. Events
+> appear as Type A broadband transients in temporal bursts corresponding to
+> ~24 vessel passages over 13 months (peak May–September, consistent with
+> krill trawler activity). The high-pass filter (30–250 Hz) isolates the
+> vessel signature from concurrent low-frequency seismic energy. Spectrogram:
+> nperseg = 256, 87.5% overlap, Hann window.
+
+### 4.3 Temporal Distribution
+
+The monthly detection counts for located T-phases and icequakes reveal
+strong seasonal patterns consistent with known geophysical processes.
+
+> **Figure: Monthly Detection Counts** (`paper/monthly_detections.png`)
+>
+> **Temporary Caption:** Monthly counts of located T-phase (blue) and
+> icequake (orange) events for tiers A–C, January 2019 through February
+> 2020. T-phase detections peak in February 2019 (dominated by the
+> Feb 11 swarm, 4,976 events) and April 2019 (the Apr 22–24 swarm,
+> ~3,495 events at peak). Icequake detections peak during the austral
+> summer (January–March) when calving and ice shelf fracture are most
+> active, and drop to near zero during the winter sea ice season
+> (June–September). The asymmetry between summer and winter icequake
+> counts is consistent with the coast-distance + sea ice filter
+> (§6.1) retaining only physically plausible winter events. Months
+> with no hydrophone coverage appear as gaps.
 
 ---
 
@@ -420,7 +483,7 @@ to all 6 moorings (WGS84 ellipsoid, pyproj).
 **Known limitation — flat-ocean approximation:** Travel times assume
 straight-line geodesic paths and a single effective speed. This ignores
 depth-dependent velocity structure and bathymetric refraction/reflection.
-For compact arrays (Wilcock, 2012 used 2D ray tracing for a 15–20 km
+For compact arrays (Wilcock [2012] used 2D ray tracing for a 15–20 km
 network), this would be a significant error. For our 175 km aperture,
 the straight-line approximation is more defensible but still introduces
 systematic bias near bathymetric barriers (ridges, shallow sills).
@@ -496,7 +559,7 @@ misclassified T-phases.
 4. **Far from coast but ice-covered** (>30 km, monthly SIC ≥15%): retain —
    sea ice cracking is physically plausible
 5. **Far from coast, ice-free** (>30 km, SIC <15%): reclassify to
-   "unclassified"
+   "unresolved"
 
 **Results:** Of 1,030 located icequakes: 507 retained (near coast), 112
 retained (in ice-covered water during winter), 411 reclassified. **619
@@ -534,7 +597,7 @@ month-by-month validation.
 **Principle:** T-phase swarms (temporally clustered events from the same
 seismic source region) should be spatially coherent. Events within a swarm
 that locate far from the swarm's centroid are likely mislocation artifacts
-(inspired by Wilcock 2012's track-constrained relocation for whale calls).
+(inspired by Wilcock's [2012] track-constrained relocation for whale calls).
 
 **Method:** Temporally adjacent T-phase events (gap <1 hour) are grouped
 into swarms. For each swarm with ≥10 events, the spatial centroid is
@@ -568,7 +631,10 @@ calibration and is valid for estimating Mc.
 **Mc estimation:** Maximum curvature method (Wiemer & Wyss, 2000) — the
 bin with the highest event count in the non-cumulative distribution
 marks the magnitude of completeness. Above Mc, the Gutenberg–Richter
-relationship log₁₀(N) = a − b·SL holds.
+relationship log₁₀(N) = a − b·SL holds. Note that the b-value is
+expressed per decibel of relative source level, not per conventional
+magnitude unit, so direct comparison with seismological b-values
+(typically ~1.0) requires a magnitude–dB conversion factor.
 
 > **Figure: Magnitude of Completeness** (`paper/magnitude_completeness.png`)
 >
@@ -589,7 +655,7 @@ relationship log₁₀(N) = a − b·SL holds.
 | Decision | Alternative | Why rejected |
 |----------|------------|--------------|
 | STA/LTA detector | Recursive STA/LTA | Classic is simpler, vectorizable, sufficient |
-| 4 overlapping bands | 3 non-overlapping bands | LTA contamination and deduplication issues |
+| 3 non-overlapping bands | 4 overlapping bands | LTA contamination and deduplication issues |
 | All-band UMAP+HDBSCAN | Per-band clustering | Single mega-cluster (99%) — frequency regime dominated |
 | Pure CNN classifier | Hybrid CNN+MLP | 39% macro F1 — labels based on features, not visuals |
 | Fixed association window | Pair-specific windows | 6× too wide for close pairs |

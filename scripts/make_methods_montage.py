@@ -26,7 +26,7 @@ from pathlib import Path
 from datetime import timedelta
 
 from read_dat import read_dat, list_mooring_files, MOORINGS, SAMPLE_RATE
-from make_bathy_map import add_caption_justified
+# add_caption_justified import removed — captions no longer baked into figures
 
 # === Paths ===
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
@@ -220,7 +220,7 @@ def _make_one_row(cls, events, color, freq_max, caption_text):
     panel_gs = GridSpec(2, n_cols, figure=fig,
                         hspace=0.08, wspace=0.25,
                         height_ratios=[1, 1.5],
-                        top=0.88, bottom=0.32,
+                        top=0.88, bottom=0.10,
                         left=0.08, right=0.95)
 
     for col_idx in range(n_cols):
@@ -293,10 +293,7 @@ def _make_one_row(cls, events, color, freq_max, caption_text):
     fig.suptitle(f"{cls} — Waveform and Spectrogram with AIC Onset Pick",
                  fontsize=FS_TITLE, fontweight="bold")
 
-    # Per-row caption
-    add_caption_justified(fig, caption_text, caption_width=0.85,
-                          fontsize=FS_CAPTION, caption_left=0.08,
-                          bold_prefix="Temporary Caption:")
+    # Caption removed — captions handled in LaTeX, not baked into figure
 
     slug = cls.lower().replace("-", "").replace(" ", "_")
     outpath = FIG_DIR / f"event_montage_{slug}.png"

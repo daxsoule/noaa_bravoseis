@@ -269,7 +269,7 @@ def fig_late_pick_problem():
     fig = plt.figure(figsize=(10, 12))
     gs = GridSpec(nrows, ncols, figure=fig,
                   hspace=0.35, wspace=0.25,
-                  top=0.93, bottom=0.14, left=0.08, right=0.96)
+                  top=0.93, bottom=0.05, left=0.08, right=0.96)
 
     fig.suptitle("STA/LTA Late-Pick Problem", fontsize=14, fontweight="bold")
 
@@ -297,21 +297,6 @@ def fig_late_pick_problem():
     fig.legend(handles=legend_elements, loc="upper center",
                bbox_to_anchor=(0.5, 0.955), ncol=2, fontsize=9,
                frameon=True, fancybox=True)
-
-    caption = (
-        "Six events illustrating the STA/LTA late-pick problem. "
-        "Dashed yellow lines mark the original STA/LTA trigger time; solid red lines mark the "
-        "AIC-refined onset. In each case, the STA/LTA detector triggered 1.5-4 seconds late, "
-        "typically in the event coda rather than at the true first arrival. "
-        "Validation on 50 manually reviewed events confirmed that 68% of raw STA/LTA picks "
-        "fall in the coda and only 11% hit the true first arrival. "
-        "Top row: low-band (1-15 Hz) T-phase events. "
-        "Middle row: mid-band (15-30 Hz) events. "
-        "Bottom row: high-band (30-250 Hz) events. "
-        "Spectrogram: nperseg=256, 87.5% overlap, Hann window."
-    )
-    add_caption_justified(fig, caption, fontsize=9,
-                          bold_prefix="Temporary Caption:")
 
     outpath = FIG_DIR / "late_pick_problem.png"
     fig.savefig(outpath, dpi=200, facecolor="white")
@@ -364,7 +349,7 @@ def fig_onset_refinement_6panel():
     fig = plt.figure(figsize=(10, 12))
     gs = GridSpec(nrows, ncols, figure=fig,
                   hspace=0.35, wspace=0.25,
-                  top=0.93, bottom=0.14, left=0.08, right=0.96)
+                  top=0.93, bottom=0.05, left=0.08, right=0.96)
 
     fig.suptitle("Onset Refinement — Curated Examples by Grade", fontsize=14, fontweight="bold")
 
@@ -391,22 +376,6 @@ def fig_onset_refinement_6panel():
     fig.legend(handles=legend_elements, loc="upper center",
                bbox_to_anchor=(0.5, 0.955), ncol=3, fontsize=9,
                frameon=True, fancybox=True)
-
-    caption = (
-        "Six curated events illustrating onset refinement quality across grades A, B, and C. "
-        "Top row: Grade A (quality >= 0.7) — sharp AIC minimum at the noise-to-signal transition, "
-        "producing a confident onset pick 0.5-2s earlier than STA/LTA. "
-        "Middle row: Grade B (quality 0.4-0.7) — moderate AIC minimum with some ambiguity, "
-        "but still a meaningful improvement over STA/LTA. "
-        "Bottom row: Grade C (quality < 0.4) — weak or ambiguous AIC minimum; these events are "
-        "excluded from source location but retained in the catalogue. "
-        "Dashed yellow: original STA/LTA trigger. Solid red: AIC-refined onset. "
-        "Dotted gray: event end (detrigger). "
-        "The AIC picker operates on the squared envelope within a 7s window (5s pre-trigger + 2s post-trigger). "
-        "Spectrogram: nperseg=256, 87.5% overlap, Hann window."
-    )
-    add_caption_justified(fig, caption, fontsize=9,
-                          bold_prefix="Temporary Caption:")
 
     outpath = FIG_DIR / "onset_refinement_6panel.png"
     fig.savefig(outpath, dpi=200, facecolor="white")
@@ -472,7 +441,7 @@ def fig_tphase_cluster_curated():
     fig = plt.figure(figsize=(10, 12))
     gs = GridSpec(nrows, ncols, figure=fig,
                   hspace=0.35, wspace=0.25,
-                  top=0.93, bottom=0.14, left=0.08, right=0.96)
+                  top=0.93, bottom=0.05, left=0.08, right=0.96)
 
     fig.suptitle("T-phase Cluster — Representative Events", fontsize=14, fontweight="bold")
 
@@ -488,21 +457,6 @@ def fig_tphase_cluster_curated():
                     show_ylabel=(col == 0),
                     freq_max=100,
                     panel_label=labels[idx])
-
-    caption = (
-        "Six representative T-phase events from Phase 1 unsupervised clusters (low_0, low_1, mid_0), "
-        "selected from events nearest the UMAP cluster centroids across different moorings. "
-        "Each panel shows bandpass-filtered waveform (top) and spectrogram (bottom, 0-100 Hz). "
-        "Dashed yellow: STA/LTA onset. Solid red: AIC-refined onset. "
-        "T-phases are characterized by impulsive broadband arrivals with dominant energy below 15 Hz "
-        "and duration typically <= 3s. "
-        "Phase 1 identified 55,783 T-phases across three clusters confirmed by expert review. "
-        "A complete 4x5 montage (20 events nearest each cluster centroid) is available in the "
-        "supplementary materials (cluster_montage_low_0.png, cluster_montage_low_1.png, cluster_montage_mid_0.png). "
-        "Spectrogram: nperseg=256, 87.5% overlap, Hann window."
-    )
-    add_caption_justified(fig, caption, fontsize=9,
-                          bold_prefix="Temporary Caption:")
 
     outpath = FIG_DIR / "tphase_cluster_curated.png"
     fig.savefig(outpath, dpi=200, facecolor="white")
@@ -625,7 +579,7 @@ def fig_magnitude_completeness():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5.5),
                                      gridspec_kw={"width_ratios": [1.2, 1],
                                                    "wspace": 0.3})
-    fig.subplots_adjust(top=0.90, bottom=0.28, left=0.08, right=0.96)
+    fig.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.96)
 
     # Left: cumulative plot
     ax1.semilogy(sl_sorted, cumulative, "k.", markersize=1.5, alpha=0.3, rasterized=True)
@@ -649,26 +603,6 @@ def fig_magnitude_completeness():
     ax2.legend(fontsize=9)
     ax2.tick_params(labelsize=9)
     ax2.grid(True, alpha=0.3, axis="y")
-
-    caption = (
-        "Acoustic magnitude of completeness for located T-phase events (tiers A-C, N="
-        f"{len(sl):,}). "
-        "Relative source level estimated as received level (peak spectral power in dB) plus "
-        "transmission loss (15*log10(r) practical spreading to nearest mooring). "
-        "These are RELATIVE values — absolute calibration in dB re 1 uPa at 1m requires "
-        "hydrophone sensitivity curves not available for this deployment. "
-        f"(a) Cumulative frequency-source level distribution with Gutenberg-Richter fit above Mc. "
-        f"Magnitude of completeness Mc = {mc:.0f} dB (maximum curvature method, Wiemer & Wyss 2000). "
-    )
-    if b_value is not None:
-        caption += f"b-value = {b_value:.3f}. "
-    caption += (
-        "(b) Non-cumulative histogram (1 dB bins) showing the rollover below Mc "
-        "where detection sensitivity falls off. "
-        "The departure from linearity below Mc indicates incomplete detection of smaller events."
-    )
-    add_caption_justified(fig, caption, fontsize=9,
-                          bold_prefix="Temporary Caption:")
 
     outpath = FIG_DIR / "magnitude_completeness.png"
     fig.savefig(outpath, dpi=200, facecolor="white")

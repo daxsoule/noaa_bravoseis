@@ -4,9 +4,12 @@ publication-quality PDF with embedded figures using markdown → HTML → WeasyP
 """
 
 import re
+import base64
+import io
 import markdown
 from weasyprint import HTML
 from pathlib import Path
+from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "outputs" / "methods_section_draft_source.md"
@@ -27,6 +30,21 @@ FIGURE_DIRS = [
 ]
 
 
+# Figures with baked-in captions that should be cropped.
+# Value is the fraction of the image height to keep (crop bottom).
+CROP_FIGURES = {
+    "recording_timeline.png": 0.78,
+    "detection_rate_timeline.png": 0.80,
+    "duration_vs_peak_freq.png": 0.80,
+    "example_detection_20190417_0919.png": 0.82,
+    "event_montage_tphase.png": 0.82,
+    "event_montage_icequake.png": 0.82,
+    "event_montage_vessel.png": 0.82,
+    "icequake_seaice_6panel.png": 0.85,
+    "sound_speed_profile.png": 0.85,
+}
+
+
 def _build_figure_index():
     """Build a dict mapping short names (as used in markdown) to absolute paths."""
     index = {}
@@ -40,6 +58,23 @@ def _build_figure_index():
             # Also key by just the filename for simple references
             index[f.name] = f
     return index
+
+
+def _crop_and_encode(path):
+    """Crop baked-in caption from bottom of figure if needed, return data URI."""
+    fname = path.name
+    keep_frac = CROP_FIGURES.get(fname)
+
+    if keep_frac is not None:
+        img = Image.open(path)
+        w, h = img.size
+        cropped = img.crop((0, 0, w, int(h * keep_frac)))
+        buf = io.BytesIO()
+        cropped.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+    else:
+        return f"file://{path}"
 
 
 def _embed_figures(html: str, fig_index: dict) -> str:
@@ -71,8 +106,9 @@ def _embed_figures(html: str, fig_index: dict) -> str:
             # Try exact match first, then just filename
             path = fig_index.get(ref) or fig_index.get(Path(ref).name)
             if path and path.exists():
+                src = _crop_and_encode(path)
                 img_tags.append(
-                    f'<img src="file://{path}" '
+                    f'<img src="{src}" '
                     f'style="max-width:100%; margin:8pt 0; display:block;" />'
                 )
             else:
