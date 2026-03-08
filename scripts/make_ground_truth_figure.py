@@ -485,9 +485,9 @@ def print_summary(matched, singer_df, n_any_covered=None):
 def make_figure(matched, singer_df, our_df):
     """Create 3-panel ground truth validation figure."""
 
-    fig = plt.figure(figsize=(16, 12))
-    gs = GridSpec(2, 2, figure=fig, hspace=0.32, wspace=0.28,
-                  left=0.07, right=0.95, top=0.94, bottom=0.06)
+    fig = plt.figure(figsize=(16, 11))
+    gs = GridSpec(2, 2, figure=fig, hspace=0.28, wspace=0.28,
+                  left=0.06, right=0.96, top=0.96, bottom=0.05)
 
     ax_a = fig.add_subplot(gs[0, 0])
     ax_b = fig.add_subplot(gs[0, 1])

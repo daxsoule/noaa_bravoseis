@@ -9,6 +9,7 @@ Produces:
   4. magnitude_completeness.png  — Cumulative freq vs. relative source level (§new)
   5. umap_clustering_composite.png — 1×3 UMAP projections colored by class (§4)
   6. vessel_cluster_curated.png  — 2×3 vessel noise cluster montage (§4.2)
+  7. icequake_seaice_6panel.png   — 3×2 icequake locations + sea ice (§5)
 
 Usage:
     uv run python scripts/make_methods_figures.py
@@ -18,6 +19,7 @@ Usage:
     uv run python scripts/make_methods_figures.py --figure completeness
     uv run python scripts/make_methods_figures.py --figure umap
     uv run python scripts/make_methods_figures.py --figure vessel
+    uv run python scripts/make_methods_figures.py --figure seaice
 """
 
 import argparse
@@ -97,11 +99,22 @@ def _load_snippet(ev, window_sec=WINDOW_SEC):
     file_start = pd.Timestamp(ts)
     offset_s = (onset_utc - file_start).total_seconds()
 
-    # Window centered on event
-    pre_s = window_sec * 0.3
-    post_s = window_sec * 0.7
-    i_start = max(0, int((offset_s - pre_s) * SAMPLE_RATE))
-    i_end = min(len(data), int((offset_s + post_s) * SAMPLE_RATE))
+    # Adapt window to event: span from before refined onset to after event end
+    shift_s = ev.get("onset_shift_s", 0)
+    if pd.notna(shift_s) and shift_s < 0:
+        refined_s = offset_s + shift_s
+    else:
+        refined_s = offset_s
+    duration = ev.get("duration_s", 1.0)
+    # Window: 1s before refined onset to 1.5s after STA/LTA onset + duration
+    event_span = (offset_s + duration) - refined_s  # refined onset to event end
+    window_actual = max(window_sec, event_span + 2.5)
+    pre_s = max(1.0, (refined_s - offset_s + shift_s) if shift_s < 0 else window_actual * 0.2)
+    pre_s = 1.0  # 1s of pre-event context
+    post_s = window_actual - pre_s
+    anchor_s = refined_s - pre_s
+    i_start = max(0, int(anchor_s * SAMPLE_RATE))
+    i_end = min(len(data), int((anchor_s + window_actual) * SAMPLE_RATE))
 
     if i_end - i_start < SAMPLE_RATE:
         return None
@@ -219,30 +232,42 @@ def _plot_panel(fig, gs_slot, ev, snip, show_xlabel=True, show_ylabel=True,
 # ========================================================================
 
 def fig_late_pick_problem():
-    """Select 6 events where STA/LTA pick is clearly late (large negative AIC shift)."""
+    """Select 6 events where STA/LTA pick is clearly late (large negative AIC shift).
+
+    Key: pick events with long enough duration that signal fills the plot,
+    and moderate shift so both picks are visible within the signal.
+    """
     print("=== Late-Pick Problem Figure ===")
     cat = pd.read_parquet(DATA_DIR / "event_catalogue.parquet")
 
-    # Want events with large negative shifts (AIC moved onset much earlier)
-    # and grade A/B (so the AIC pick is trustworthy)
+    # Want events where:
+    #  - AIC shift is clearly visible (>= 1.5s earlier)
+    #  - Duration is long enough to fill the plot (>= 4s)
+    #  - High SNR so signal is obvious
+    #  - Grade A/B so refined pick is trustworthy
     mask = (
         cat["onset_grade"].isin(["A", "B"]) &
-        (cat["onset_shift_s"] < -1.5) &  # at least 1.5s earlier
-        (cat["snr"] > 5.0)  # clear events
+        (cat["onset_shift_s"] < -1.5) &
+        (cat["duration_s"] >= 4.0) &
+        (cat["snr"] > 8.0)
     )
     candidates = cat[mask].copy()
-    print(f"  Candidates with shift < -1.5s, grade A/B, SNR > 5: {len(candidates)}")
+    # Score: prefer events where shift is a large fraction of duration
+    # (visually compelling) but signal still fills most of the window
+    candidates["score"] = (
+        candidates["snr"].clip(upper=30) *
+        candidates["duration_s"].clip(upper=15) *
+        (-candidates["onset_shift_s"]).clip(upper=5)
+    )
+    print(f"  Candidates: {len(candidates)}")
 
-    # Sample 2 per band, prefer large shifts
-    rng = np.random.default_rng(42)
+    # Sample 2 per band, prefer high-scoring events across moorings
     selected = []
     for band in ["low", "mid", "high"]:
         band_cands = candidates[candidates["detection_band"] == band]
-        band_cands = band_cands.sort_values("onset_shift_s")  # most negative first
-        # Take from top 50, but spread across moorings
-        top = band_cands.head(50)
+        band_cands = band_cands.sort_values("score", ascending=False)
+        top = band_cands.head(100)
         if len(top) >= 2:
-            # Pick 2 from different moorings if possible
             moorings = top["mooring"].unique()
             picks = []
             for m in moorings:
@@ -273,7 +298,7 @@ def fig_late_pick_problem():
     fig = plt.figure(figsize=(10, 12))
     gs = GridSpec(nrows, ncols, figure=fig,
                   hspace=0.35, wspace=0.25,
-                  top=0.93, bottom=0.05, left=0.08, right=0.96)
+                  top=0.95, bottom=0.03, left=0.08, right=0.96)
 
     fig.suptitle("STA/LTA Late-Pick Problem", fontsize=14, fontweight="bold")
 
@@ -303,7 +328,7 @@ def fig_late_pick_problem():
                frameon=True, fancybox=True)
 
     outpath = FIG_DIR / "late_pick_problem.png"
-    fig.savefig(outpath, dpi=200, facecolor="white")
+    fig.savefig(outpath, dpi=200, facecolor="white", bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {outpath}")
     return outpath
@@ -1089,6 +1114,261 @@ def fig_swarm_coherence_qc():
 
 
 # ========================================================================
+# Icequake + Sea Ice 6-panel figure
+# ========================================================================
+
+def fig_icequake_seaice_6panel():
+    """Create 3x2 bimonthly panels of icequake locations over sea ice concentration.
+
+    Each panel shows shaded-relief bathymetry, sea ice concentration overlay,
+    and icequake locations colored by retained/removed status.
+    """
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+    from matplotlib.colors import LightSource
+    from matplotlib.lines import Line2D
+    from scipy.interpolate import griddata
+    from datetime import datetime
+    import cmocean
+
+    print("=" * 60)
+    print("Icequake + Sea Ice 6-panel figure (3x2)")
+    print("=" * 60)
+
+    # --- Constants (matching locate_events.py) ---
+    ICEQUAKE_MAX_COAST_DIST_KM = 30.0
+    SEA_ICE_CONC_THRESHOLD = 0.15
+
+    # --- Load data ---
+    print("  Loading event locations...")
+    loc_df = pd.read_parquet(DATA_DIR / "event_locations.parquet")
+    loc_df["earliest_utc"] = pd.to_datetime(loc_df["earliest_utc"])
+
+    # We need the original icequakes BEFORE reclassification.
+    # icequake_filtered=True means it WAS an icequake but got reclassified.
+    # event_class=='icequake' means it's a retained icequake.
+    # So original icequakes = (event_class=='icequake') | (icequake_filtered==True)
+    is_orig_icequake = (
+        (loc_df["event_class"] == "icequake") | (loc_df["icequake_filtered"] == True)
+    )
+    located = loc_df["quality_tier"].isin(["A", "B", "C"]) & loc_df["lat"].notna()
+    iceq = loc_df[is_orig_icequake & located].copy()
+    print(f"  {len(iceq)} located icequakes (before filter)")
+
+    # Classification: retained vs removed
+    # "coast" = within coast distance (retained)
+    # "ice" = far from coast but in ice-covered water (retained)
+    # "removed" = far from coast, no ice cover (icequake_filtered=True)
+    iceq["status"] = "removed"
+    near_coast = iceq["dist_to_coast_km"] <= ICEQUAKE_MAX_COAST_DIST_KM
+    ice_covered = (iceq["dist_to_coast_km"] > ICEQUAKE_MAX_COAST_DIST_KM) & (
+        iceq["sea_ice_conc"] >= SEA_ICE_CONC_THRESHOLD
+    )
+    iceq.loc[near_coast, "status"] = "coast"
+    iceq.loc[ice_covered, "status"] = "ice"
+    # Retained icequakes that are not filtered
+    retained_mask = ~iceq["icequake_filtered"]
+    iceq.loc[retained_mask & ~near_coast & ~ice_covered, "status"] = "coast"
+
+    # Bimonthly periods
+    periods = [
+        ("Jan-Feb 2019",       "2019-01", "2019-02"),
+        ("Mar-Apr 2019",       "2019-03", "2019-04"),
+        ("May-Jun 2019",       "2019-05", "2019-06"),
+        ("Jul-Aug 2019",       "2019-07", "2019-08"),
+        ("Sep-Oct 2019",       "2019-09", "2019-10"),
+        ("Nov 2019-Feb 2020",  "2019-11", "2020-02"),
+    ]
+
+    # --- Load sea ice ---
+    print("  Loading sea ice data...")
+    sic_npz = np.load(DATA_DIR / "sea_ice_monthly.npz")
+    sic_conc = sic_npz["ice_conc"]
+    sic_conc = np.where((sic_conc >= 0) & (sic_conc <= 1.0), sic_conc, np.nan)
+    sic_times = list(sic_npz["times"])
+    sic_lon = sic_npz["lon_grid"]
+    sic_lat = sic_npz["lat_grid"]
+    print(f"  Sea ice: {sic_conc.shape[0]} months, grid {sic_conc.shape[1]}x{sic_conc.shape[2]}")
+
+    # --- Load bathymetry ---
+    print("  Loading bathymetry...")
+    bathy_path = Path("/home/jovyan/my_data/bravoseis/bathymetry/bransfield.xyz")
+    bathy_data = np.loadtxt(bathy_path)
+    blon, blat, bz = bathy_data[:, 0], bathy_data[:, 1], bathy_data[:, 2]
+
+    grid_spacing = 0.008  # coarser for speed in 6-panel
+    lon_g1d = np.arange(blon.min(), blon.max(), grid_spacing)
+    lat_g1d = np.arange(blat.min(), blat.max(), grid_spacing)
+    lon_g2d, lat_g2d = np.meshgrid(lon_g1d, lat_g1d)
+    z_grid = griddata((blon, blat), bz, (lon_g2d, lat_g2d), method="linear")
+    del bathy_data, blon, blat, bz
+
+    # Shaded relief
+    ls = LightSource(azdeg=315, altdeg=45)
+    z_ocean = np.where(z_grid <= 0, z_grid, np.nan)
+    z_min, z_max = np.nanpercentile(z_ocean, [2, 98])
+    bathy_cmap = cmocean.cm.ice.copy()
+    bathy_cmap.set_bad(color="#d9d9d9")
+    rgb = ls.shade(z_ocean, cmap=bathy_cmap, blend_mode="soft",
+                   vmin=z_min, vmax=z_max)
+
+    # --- Map setup ---
+    MAP_LON_MIN, MAP_LON_MAX = -61.5, -55.5
+    MAP_LAT_MIN, MAP_LAT_MAX = -63.1, -61.9
+    data_crs = ccrs.PlateCarree()
+    map_proj = ccrs.Mercator(central_longitude=-58.5)
+
+    # --- Font sizes ---
+    FS_PANEL_TITLE = 11
+    FS_AXIS = 10
+    FS_LEGEND = 9
+    FS_SUPTITLE = 14
+
+    # --- Create figure ---
+    fig, axes = plt.subplots(3, 2, figsize=(12, 16),
+                              subplot_kw={"projection": map_proj})
+
+    total_retained = 0
+    for idx, (label, m_start, m_end) in enumerate(periods):
+        row, col = divmod(idx, 2)
+        ax = axes[row, col]
+
+        ax.set_extent([MAP_LON_MIN, MAP_LON_MAX, MAP_LAT_MIN, MAP_LAT_MAX],
+                      crs=data_crs)
+
+        # Bathymetry
+        ax.imshow(rgb,
+                  extent=[lon_g1d.min(), lon_g1d.max(),
+                          lat_g1d.min(), lat_g1d.max()],
+                  origin="lower", transform=data_crs, zorder=1)
+
+        # Coastlines
+        ax.coastlines(resolution="10m", linewidth=0.5, color="black", zorder=10)
+        ax.add_feature(cfeature.LAND, facecolor="#d9d9d9", edgecolor="black",
+                       linewidth=0.3, zorder=5)
+
+        # Sea ice concentration — average over the bimonthly period
+        month_indices = []
+        # Generate all months in range
+        dt_start = datetime.strptime(m_start, "%Y-%m")
+        dt_end = datetime.strptime(m_end, "%Y-%m")
+        dt = dt_start
+        while dt <= dt_end:
+            ms = dt.strftime("%Y-%m")
+            if ms in sic_times:
+                month_indices.append(sic_times.index(ms))
+            if dt.month == 12:
+                dt = dt.replace(year=dt.year + 1, month=1)
+            else:
+                dt = dt.replace(month=dt.month + 1)
+
+        if month_indices:
+            sic_avg = np.nanmean(sic_conc[month_indices], axis=0)
+            # Plot sea ice as semi-transparent overlay
+            sic_masked = np.ma.masked_invalid(sic_avg)
+            ice_cmap = plt.cm.Blues_r
+            im = ax.pcolormesh(sic_lon, sic_lat, sic_masked,
+                               cmap=ice_cmap, vmin=0, vmax=1,
+                               alpha=0.45, transform=data_crs, zorder=2,
+                               shading="auto")
+            # 50% contour
+            try:
+                ax.contour(sic_lon, sic_lat, sic_avg, levels=[0.5],
+                           colors=["deepskyblue"], linewidths=1.0, linestyles="--",
+                           transform=data_crs, zorder=6)
+            except Exception:
+                pass
+
+        # Filter icequakes to this period
+        period_mask = (iceq["earliest_utc"] >= dt_start) & (
+            iceq["earliest_utc"] < dt_end.replace(
+                month=dt_end.month % 12 + 1,
+                year=dt_end.year + (1 if dt_end.month == 12 else 0))
+        )
+        iceq_period = iceq[period_mask]
+
+        n_coast = (iceq_period["status"] == "coast").sum()
+        n_ice = (iceq_period["status"] == "ice").sum()
+        n_removed = (iceq_period["status"] == "removed").sum()
+        total_retained += n_coast + n_ice
+
+        # Plot removed first (behind), then retained
+        removed = iceq_period[iceq_period["status"] == "removed"]
+        coast = iceq_period[iceq_period["status"] == "coast"]
+        ice = iceq_period[iceq_period["status"] == "ice"]
+
+        if len(removed) > 0:
+            ax.scatter(removed["lon"], removed["lat"], s=12, c="red",
+                       alpha=0.5, edgecolors="darkred", linewidths=0.3,
+                       transform=data_crs, zorder=8, label=f"removed ({n_removed})")
+        if len(coast) > 0:
+            ax.scatter(coast["lon"], coast["lat"], s=16, c="limegreen",
+                       alpha=0.7, edgecolors="darkgreen", linewidths=0.3,
+                       transform=data_crs, zorder=9, label=f"coast ({n_coast})")
+        if len(ice) > 0:
+            ax.scatter(ice["lon"], ice["lat"], s=16, c="cyan",
+                       alpha=0.7, edgecolors="darkcyan", linewidths=0.3,
+                       transform=data_crs, zorder=9, label=f"ice ({n_ice})")
+
+        # Mooring locations
+        for key, info in sorted(MOORINGS.items()):
+            ax.plot(info["lon"], info["lat"], marker="^", color="red",
+                    markersize=5, markeredgecolor="black", markeredgewidth=0.5,
+                    transform=data_crs, zorder=11)
+
+        # Panel title
+        ax.set_title(f"{label}  (coast={n_coast}, ice={n_ice}, removed={n_removed})",
+                     fontsize=FS_PANEL_TITLE, fontweight="bold", pad=6)
+
+        # Gridlines
+        gl = ax.gridlines(crs=data_crs, draw_labels=True,
+                          linewidth=0.3, color="white", alpha=0.3, linestyle="--")
+        gl.top_labels = False
+        gl.right_labels = False if col == 0 else False
+        gl.left_labels = True if col == 0 else False
+        gl.bottom_labels = True if row == 2 else False
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        gl.xlabel_style = {"size": FS_AXIS}
+        gl.ylabel_style = {"size": FS_AXIS}
+
+    # Suptitle
+    fig.suptitle(
+        f"BRAVOSEIS Icequake Locations + Sea Ice Concentration (n={total_retained} retained)",
+        fontsize=FS_SUPTITLE, fontweight="bold", y=0.98
+    )
+
+    # Legend (single legend for all panels)
+    legend_elements = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="limegreen",
+               markeredgecolor="darkgreen", markersize=7, label="Retained (near coast)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="cyan",
+               markeredgecolor="darkcyan", markersize=7, label="Retained (ice-covered)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="red",
+               markeredgecolor="darkred", markersize=7, label="Removed"),
+        Line2D([0], [0], marker="^", color="w", markerfacecolor="red",
+               markeredgecolor="black", markersize=7, label="Mooring"),
+        Line2D([0], [0], linestyle="--", color="deepskyblue", linewidth=1.0,
+               label="50% SIC contour"),
+    ]
+    fig.legend(handles=legend_elements, loc="lower center", ncol=5,
+               fontsize=FS_LEGEND, frameon=True, fancybox=True,
+               edgecolor="0.7", bbox_to_anchor=(0.5, 0.01))
+
+    plt.subplots_adjust(hspace=0.18, wspace=0.08, top=0.94, bottom=0.06)
+
+    # Save
+    out_dir = OUTPUT_DIR / "figures" / "exploratory" / "location"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outpath = out_dir / "icequake_seaice_6panel.png"
+    fig.savefig(outpath, dpi=300, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {outpath}")
+    return outpath
+
+
+# ========================================================================
 # Main
 # ========================================================================
 
@@ -1096,7 +1376,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--figure", choices=[
         "late_pick", "onset", "cluster", "completeness", "umap",
-        "vessel", "swarm_qc", "all",
+        "vessel", "swarm_qc", "seaice", "all",
     ], default="all")
     args = parser.parse_args()
 
@@ -1108,6 +1388,7 @@ def main():
         "umap": fig_umap_clustering_composite,
         "vessel": fig_vessel_cluster_curated,
         "swarm_qc": fig_swarm_coherence_qc,
+        "seaice": fig_icequake_seaice_6panel,
     }
 
     if args.figure == "all":

@@ -242,7 +242,7 @@ def plot_sound_speed_profile(profiles, primary_name, hydrophone_depths):
 
     fig.tight_layout()
     outpath = FIG_DIR / "sound_speed_profile.png"
-    fig.savefig(outpath, dpi=300, facecolor="white")
+    fig.savefig(outpath, dpi=300, facecolor="white", bbox_inches="tight", pad_inches=0.1)
     plt.close(fig)
     print(f"Saved: {outpath}")
 

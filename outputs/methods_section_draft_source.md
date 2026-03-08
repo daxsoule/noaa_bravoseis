@@ -752,8 +752,8 @@ coverage overlaps. Match statistics will improve as the full archive is
 processed.
 
 **Complementary classification approaches:** Singer's catalogue employs
-a geographic classification framework, assigning EQ or IQ labels based
-in part on event location relative to the mooring network and coastline.
+visual analysis of spectral information, assigning EQ or IQ labels based
+on the analyst's interpretation of spectrogram characteristics for each event.
 Our automated pipeline classifies events using quantitative spectral
 criteria (duration, spectral slope, peak frequency). These represent
 different — and complementary — analytical philosophies.
@@ -769,11 +769,11 @@ three classes with similar distributions:
 
 The similar distributions across all three of Singer's categories suggest
 that the two classification schemes are capturing different axes of
-variation in the event population. Singer's geographic approach groups
-events by spatial context, while our spectral approach groups them by
-waveform characteristics. Both provide useful information — geographic
-context is important for interpretation, while spectral characteristics
-relate more directly to physical source mechanisms.
+variation in the event population. Singer's visual spectral approach groups
+events by an analyst's holistic interpretation, while our automated approach
+applies quantitative feature boundaries. Both provide useful information —
+expert interpretation captures contextual subtleties, while quantitative
+criteria ensure reproducibility and scale to large populations.
 
 **Value added by spectral classification:** The automated pipeline
 introduces a quantitative distinction between impulsive tectonic T-phases
@@ -796,16 +796,16 @@ analysis.
 > **Figure: Ground Truth — Singer Comparison** (`paper/ground_truth_singer.png`)
 >
 > **Temporary Caption:** Comparison between our automated spectral
-> classification and Singer's manual geographic catalogue (18,505 events
+> classification and Singer's visual spectral catalogue (18,505 events
 > from the same hydrophone data, 1,275 matched within data-coverage
 > overlap). (a) Classification cross-comparison: Singer's labels (rows)
 > vs. our labels (columns) for matched events. All three of Singer's
 > categories map to our classes with similar distributions, reflecting the
-> complementary nature of geographic vs. spectral classification
+> complementary nature of visual vs. automated spectral classification
 > approaches. (b) Monthly event counts: Singer EQ and IQ (bars, left axis)
 > overlaid with our T-phase and icequake detections (lines, right axis).
 > Our icequake population shows a seasonal signal (summer peak) not
-> resolved by the geographic classification. (c) Duration vs. spectral
+> resolved by the visual classification. (c) Duration vs. spectral
 > slope for matched events colored by Singer's label, illustrating the
 > overlapping feature-space distributions that the automated spectral
 > boundaries partition into physically interpretable populations.

@@ -564,13 +564,13 @@ def plot_training_curves(history):
 
 def plot_confusion_matrix(y_true, y_pred):
     cm = confusion_matrix(y_true, y_pred)
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(6, 5))
     disp = ConfusionMatrixDisplay(cm, display_labels=CLASS_NAMES)
     disp.plot(ax=ax, cmap="Blues", values_format="d")
     ax.set_title("CNN Test Set Confusion Matrix", fontsize=14, fontweight="bold")
     plt.tight_layout()
     outpath = FIG_DIR / "cnn_confusion_matrix.png"
-    fig.savefig(outpath, dpi=200)
+    fig.savefig(outpath, dpi=200, bbox_inches="tight", pad_inches=0.1)
     plt.close(fig)
     print(f"  Saved: {outpath}")
 
