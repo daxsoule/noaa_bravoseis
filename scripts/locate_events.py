@@ -76,11 +76,25 @@ OUTLIER_RESIDUAL_FACTOR = 3.0
 
 
 def load_travel_times():
-    """Load effective sound speed from travel_times.json."""
+    """Load effective sound speed from travel_times.json.
+
+    Returns
+    -------
+    c_eff_mean : float
+        Global mean effective speed (m/s).
+    pair_speeds : dict
+        {(mi, mj): c_eff_ms} for each mooring pair, keys sorted alphabetically.
+    """
     json_path = DATA_DIR / "travel_times.json"
     with open(json_path) as f:
         data = json.load(f)
-    return data["effective_speed_mean_ms"]
+    c_eff_mean = data["effective_speed_mean_ms"]
+    pair_speeds = {}
+    for pair_key, pinfo in data["pairs"].items():
+        mi, mj = pair_key.split("-")
+        pair_speeds[(mi, mj)] = pinfo["c_eff_ms"]
+        pair_speeds[(mj, mi)] = pinfo["c_eff_ms"]  # symmetric
+    return c_eff_mean, pair_speeds
 
 
 def build_grid(spacing_deg):
@@ -118,7 +132,7 @@ def precompute_distances(lon_grid, lat_grid):
     return dist_km
 
 
-def locate_one(mooring_onsets, dist_km_grids, c_eff):
+def locate_one(mooring_onsets, dist_km_grids, c_eff, pair_speeds=None):
     """Grid-search TDOA location for one association.
 
     Parameters
@@ -128,7 +142,10 @@ def locate_one(mooring_onsets, dist_km_grids, c_eff):
     dist_km_grids : dict
         Precomputed distance grids from precompute_distances().
     c_eff : float
-        Effective sound speed (m/s).
+        Effective sound speed (m/s) — used as fallback when pair_speeds
+        is None or a specific pair is missing.
+    pair_speeds : dict or None
+        {(mi, mj): c_eff_ms} for per-pair effective speeds.
 
     Returns
     -------
@@ -146,16 +163,23 @@ def locate_one(mooring_onsets, dist_km_grids, c_eff):
     pair_labels = []
     for i in range(n_moorings):
         for j in range(i + 1, n_moorings):
-            dt = mooring_onsets[moorings[j]] - mooring_onsets[moorings[i]]
+            mi, mj = moorings[i], moorings[j]
+            dt = mooring_onsets[mj] - mooring_onsets[mi]
             obs_tdoa.append(dt)
-            pair_labels.append((moorings[i], moorings[j]))
+            pair_labels.append((mi, mj))
     obs_tdoa = np.array(obs_tdoa)
 
     # Predicted TDOAs at each grid point
-    # t_pred(i→j) = (dist_j - dist_i) / c_eff * 1000 (km→m conversion)
+    # When per-pair speeds are available, use them:
+    #   t_pred(i→j) = (dist_j - dist_i) / c_pair(i,j) * 1000
+    # This accounts for path-dependent sound speed variations derived
+    # from XBT profiles (range 1454.8-1456.1 m/s across pairs).
     pred_tdoa_stack = []
     for mi, mj in pair_labels:
-        pred_dt = (dist_km_grids[mj] - dist_km_grids[mi]) * 1000.0 / c_eff
+        c_pair = c_eff  # fallback
+        if pair_speeds is not None:
+            c_pair = pair_speeds.get((mi, mj), c_eff)
+        pred_dt = (dist_km_grids[mj] - dist_km_grids[mi]) * 1000.0 / c_pair
         pred_tdoa_stack.append(pred_dt)
 
     # RMS residual at each grid point
@@ -183,8 +207,78 @@ def locate_one(mooring_onsets, dist_km_grids, c_eff):
     }
 
 
+def refine_location(coarse_lat, coarse_lon, mooring_onsets, c_eff,
+                    pair_speeds=None, fine_spacing=0.001, pad_deg=0.015):
+    """Fine grid search around the coarse location minimum.
+
+    Creates a small grid (0.001 deg ~ 100 m) centered on the coarse
+    solution and finds the precise minimum.  Uses a fast flat-Earth
+    distance approximation (valid at ~100 m scale near the study area
+    at ~-62 deg latitude).
+
+    Returns
+    -------
+    result : dict
+        {lat, lon, residual_s} at the refined location.
+    """
+    moorings = sorted(mooring_onsets.keys())
+    n_moorings = len(moorings)
+    if n_moorings < 2:
+        return None
+
+    # Build fine grid
+    fine_lons = np.arange(coarse_lon - pad_deg, coarse_lon + pad_deg,
+                          fine_spacing)
+    fine_lats = np.arange(coarse_lat - pad_deg, coarse_lat + pad_deg,
+                          fine_spacing)
+    fine_lon_grid, fine_lat_grid = np.meshgrid(fine_lons, fine_lats)
+
+    # Fast flat-Earth distance approximation (km)
+    # At ~-62 deg latitude: 1 deg lat ~ 111 km, 1 deg lon ~ 52 km
+    deg2km_lat = 111.0
+    deg2km_lon = 111.0 * np.cos(np.radians(coarse_lat))
+    fine_dist_km = {}
+    for mkey in moorings:
+        m_lon = MOORINGS[mkey]["lon"]
+        m_lat = MOORINGS[mkey]["lat"]
+        dlat_km = (fine_lat_grid - m_lat) * deg2km_lat
+        dlon_km = (fine_lon_grid - m_lon) * deg2km_lon
+        fine_dist_km[mkey] = np.sqrt(dlat_km**2 + dlon_km**2)
+
+    # Compute observed TDOAs
+    obs_tdoa = []
+    pair_labels = []
+    for i in range(n_moorings):
+        for j in range(i + 1, n_moorings):
+            dt = mooring_onsets[moorings[j]] - mooring_onsets[moorings[i]]
+            obs_tdoa.append(dt)
+            pair_labels.append((moorings[i], moorings[j]))
+    obs_tdoa = np.array(obs_tdoa)
+
+    # Predicted TDOAs and RMS on fine grid
+    n_pairs = len(obs_tdoa)
+    rms_fine = np.zeros_like(fine_lon_grid)
+    for k, (mi, mj) in enumerate(pair_labels):
+        c_pair = c_eff
+        if pair_speeds is not None:
+            c_pair = pair_speeds.get((mi, mj), c_eff)
+        pred_dt = (fine_dist_km[mj] - fine_dist_km[mi]) * 1000.0 / c_pair
+        rms_fine += (pred_dt - obs_tdoa[k]) ** 2
+    rms_fine = np.sqrt(rms_fine / n_pairs)
+
+    min_idx = np.unravel_index(np.argmin(rms_fine), rms_fine.shape)
+    return {
+        "lat": float(fine_lat_grid[min_idx]),
+        "lon": float(fine_lon_grid[min_idx]),
+        "residual_s": float(rms_fine[min_idx]),
+        "rms_grid": rms_fine,
+        "fine_lat_grid": fine_lat_grid,
+        "fine_lon_grid": fine_lon_grid,
+    }
+
+
 def locate_association(assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
-                       c_eff, do_jackknife=True):
+                       c_eff, do_jackknife=True, pair_speeds=None):
     """Locate one association with optional jackknife validation.
 
     Returns a dict with location, quality tier, and diagnostics.
@@ -211,8 +305,8 @@ def locate_association(assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
     if len(mooring_onsets) < 2:
         return None
 
-    # --- Main location ---
-    result = locate_one(mooring_onsets, dist_km_grids, c_eff)
+    # --- Main location (coarse grid) ---
+    result = locate_one(mooring_onsets, dist_km_grids, c_eff, pair_speeds)
     if result is None:
         return None
 
@@ -251,7 +345,8 @@ def locate_association(assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
                     reduced_onsets = {m: t for m, t in mooring_onsets.items()
                                       if m != mk}
                     if len(reduced_onsets) >= 3:
-                        r2 = locate_one(reduced_onsets, dist_km_grids, c_eff)
+                        r2 = locate_one(reduced_onsets, dist_km_grids,
+                                        c_eff, pair_speeds)
                         if r2 and r2["residual_s"] < residual * 0.7:
                             # Significant improvement — use reduced solution
                             lat_loc = float(lat_grid[r2["grid_idx"]])
@@ -263,6 +358,23 @@ def locate_association(assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
                             n_moorings = len(moorings_used)
                     break  # Only try dropping the worst one
 
+    # --- Fine grid refinement ---
+    # Refine the coarse location with a 0.001 deg (~100 m) grid search
+    onsets_for_refine = {m: mooring_onsets[m] for m in moorings_used}
+    refined = refine_location(lat_loc, lon_loc, onsets_for_refine, c_eff,
+                              pair_speeds=pair_speeds)
+    if refined is not None:
+        lat_loc = refined["lat"]
+        lon_loc = refined["lon"]
+        residual = refined["residual_s"]
+        # Store the fine RMS grid for uncertainty estimation
+        result["rms_grid"] = refined["rms_grid"]
+        result["grid_idx"] = np.unravel_index(
+            np.argmin(refined["rms_grid"]), refined["rms_grid"].shape)
+        # Update the lat/lon grids used for uncertainty calc
+        result["_fine_lat_grid"] = refined["fine_lat_grid"]
+        result["_fine_lon_grid"] = refined["fine_lon_grid"]
+
     # --- Jackknife (leave-one-out) ---
     jackknife_shift_km = 0.0
     jackknife_stable = True
@@ -273,7 +385,7 @@ def locate_association(assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
                        if m != mk_drop and m in moorings_used}
             if len(reduced) < 3:
                 continue
-            r_jk = locate_one(reduced, dist_km_grids, c_eff)
+            r_jk = locate_one(reduced, dist_km_grids, c_eff, pair_speeds)
             if r_jk:
                 jk_lat = float(lat_grid[r_jk["grid_idx"]])
                 jk_lon = float(lon_grid[r_jk["grid_idx"]])
@@ -339,8 +451,14 @@ def locate_association(assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
                 # Grid spacing in km (approximate at this latitude)
                 deg2km_lat = 111.0  # ~constant
                 deg2km_lon = 111.0 * np.cos(np.radians(lat_loc))
-                grid_spacing_deg = abs(
-                    float(lat_grid[1, 0]) - float(lat_grid[0, 0]))
+                # Use fine grid spacing if available from refinement
+                fine_lat = result.get("_fine_lat_grid")
+                if fine_lat is not None:
+                    grid_spacing_deg = abs(
+                        float(fine_lat[1, 0]) - float(fine_lat[0, 0]))
+                else:
+                    grid_spacing_deg = abs(
+                        float(lat_grid[1, 0]) - float(lat_grid[0, 0]))
                 dy_km = grid_spacing_deg * deg2km_lat
                 dx_km = grid_spacing_deg * deg2km_lon
                 # Semi-axes in km (1-sigma level: rms increases by rms_min)
@@ -1134,10 +1252,12 @@ def main():
     cat_df["onset_utc"] = pd.to_datetime(cat_df["onset_utc"])
     assoc_df = pd.read_parquet(DATA_DIR / "cross_mooring_associations.parquet")
     assoc_df["earliest_utc"] = pd.to_datetime(assoc_df["earliest_utc"])
-    c_eff = load_travel_times()
+    c_eff, pair_speeds = load_travel_times()
     print(f"  Catalogue: {len(cat_df):,} events")
     print(f"  Associations: {len(assoc_df):,}")
-    print(f"  Effective sound speed: {c_eff:.1f} m/s")
+    print(f"  Effective sound speed: {c_eff:.1f} m/s (mean)")
+    print(f"  Per-pair speeds: {len(pair_speeds)//2} pairs "
+          f"({min(pair_speeds.values()):.1f}-{max(pair_speeds.values()):.1f} m/s)")
 
     # Filter to >=3 moorings for 2D location
     locatable = assoc_df[assoc_df["n_moorings"] >= 3].copy()
@@ -1164,7 +1284,7 @@ def main():
     for i, (_, assoc_row) in enumerate(locatable.iterrows()):
         loc = locate_association(
             assoc_row, cat_df, dist_km_grids, lon_grid, lat_grid,
-            c_eff, do_jackknife=do_jk
+            c_eff, do_jackknife=do_jk, pair_speeds=pair_speeds
         )
         if loc is not None:
             results.append(loc)

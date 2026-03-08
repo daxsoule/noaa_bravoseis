@@ -848,10 +848,17 @@ cross-mooring association with >=3 moorings, the algorithm finds the grid point
 that minimizes the RMS residual between observed and predicted inter-station
 travel time differences.
 
-**Grid**: 0.01° spacing (~1 km) covering the study area ±0.5° padding. Total
-154,700 grid points. Geodesic distances precomputed from each grid point to
-all 6 moorings using WGS84 ellipsoid. Effective horizontal sound speed:
-**1455.5 m/s** (XBT-derived, harmonic mean over water column).
+**Grid**: Two-stage approach — coarse 0.01° spacing (~1 km) covering the study
+area ±0.5° padding (154,700 grid points), followed by fine 0.001° refinement
+(~100 m) in a ±0.015° region around the coarse minimum. Geodesic distances
+precomputed for the coarse grid (WGS84 ellipsoid); flat-Earth approximation
+used for the fine grid (valid at ~100 m scale at -62° latitude).
+
+**Sound speed**: Per-pair effective speeds derived from XBT profiles (range
+1454.8–1456.1 m/s), used instead of a single array-wide mean (1455.5 m/s).
+Each mooring pair's TDOA prediction uses its path-specific effective speed.
+The per-pair correction is small (0.07% max) but removes a known systematic
+bias. Global mean retained as fallback for any missing pair.
 
 **Multipath protection**: Three mechanisms address multipath-contaminated onsets:
 
