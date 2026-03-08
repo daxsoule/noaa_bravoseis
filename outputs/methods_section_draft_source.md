@@ -519,14 +519,31 @@ For each association with ≥3 moorings, a geographic grid is searched for
 the point that minimizes the RMS residual between observed and predicted
 inter-station travel time differences.
 
-**Grid:** 0.01° spacing (~1 km), covering the study area ±0.5° padding.
-154,700 grid points. Geodesic distances precomputed from each grid point
-to all 6 moorings (WGS84 ellipsoid, pyproj).
+**Two-stage grid search:** A coarse grid at 0.01° spacing (~1 km) covers the
+study area ±0.5° padding (154,700 grid points, geodesic distances precomputed
+via WGS84 ellipsoid). After identifying the coarse minimum, a fine grid at
+0.001° spacing (~100 m) is searched within a ±0.015° region around it. The
+fine stage uses a flat-Earth distance approximation (1° lat ≈ 111 km,
+1° lon ≈ 111·cos(lat) km), which introduces negligible error at the ~100 m
+scale of the refinement grid at −62° latitude. This two-stage approach
+improves location precision by approximately 10× while keeping
+computational cost modest — the fine grid contains only ~900 points per
+event, compared to 154,700 for the coarse grid.
 
-**Effective sound speed:** 1455.5 m/s (XBT-derived harmonic mean).
+**Per-pair effective sound speeds:** Rather than applying a single
+array-wide mean speed, each mooring pair's TDOA prediction uses its own
+effective horizontal speed derived from XBT cast profiles. Per-pair speeds
+range from 1454.8 m/s (M2–M3) to 1456.1 m/s (M1–M5, M4–M5, M5–M6),
+compared to the global mean of 1455.5 m/s. The maximum speed variation
+across pairs is 0.07%, producing travel time corrections of up to ~0.08 s
+on the longest paths (M1–M6, 176 km). While the practical impact on tier
+classification is small (the correction is below onset pick uncertainty
+for most events), this removes a known systematic bias in the TDOA
+predictions and is the theoretically correct treatment when pair-specific
+sound speed information is available.
 
 **Known limitation — flat-ocean approximation:** Travel times assume
-straight-line geodesic paths and a single effective speed. This ignores
+straight-line geodesic paths and pair-specific effective speeds. This ignores
 depth-dependent velocity structure and bathymetric refraction/reflection.
 For compact arrays (Wilcock [2012] used 2D ray tracing for a 15–20 km
 network), this would be a significant error. For our 175 km aperture,
@@ -823,6 +840,106 @@ analysis.
 | Fixed association window | Pair-specific windows | 6× too wide for close pairs |
 | 2D ray tracing | Effective speed | No regional 3D sound speed model available |
 | Fixed 30 km icequake filter | Seasonal (coast + sea ice) | Rejects legitimate winter sea-ice events |
+
+---
+
+## Appendix A: Rejected Location Improvements
+
+Five potential improvements to the source location algorithm were
+systematically evaluated on the `exploration/location-improvements` branch,
+using the same 43,055 associations and 26,208 locatable events as the
+baseline pipeline. Three were rejected after testing demonstrated that they
+either had no measurable impact or actively degraded location quality. These
+negative results are reported here because they constrain the achievable
+precision of the current approach and inform future methodological choices.
+
+### A.1 Station Timing Corrections
+
+**What was tested:** A two-pass location scheme in which the first pass
+locates all events with the standard algorithm, and the second pass applies
+per-mooring timing corrections derived from the mean onset residuals of
+well-constrained tier A events (≥5 moorings, N = 1,104). This approach is
+standard in seismic network processing to absorb systematic clock drift,
+local velocity anomalies, or instrument response delays.
+
+**Result:** All six station corrections were < 0.001 s (effectively zero).
+Tier counts were unchanged (A: 4,287, B: 6,909, C: 925 — identical to
+the pre-correction baseline).
+
+**Why rejected:** The near-zero corrections are a positive finding: they
+confirm that the BRAVOSEIS moorings have no detectable systematic timing
+biases. This is consistent with the CSAC (chip-scale atomic clock)
+oscillators used in the deployment, which maintain < 1 ms/day drift.
+Additionally, at the well-constrained tier A events used to compute
+corrections, per-mooring residuals at the grid-search optimum are
+symmetrically distributed around zero by construction. Station corrections
+become non-zero only when applied to data with systematic quality
+differences across moorings (e.g., the expanded but lower-quality
+association set from Step 4), suggesting the framework may prove useful
+in future work with different association criteria.
+
+### A.2 Extended Seismic Onset Picker
+
+**What was tested:** The envelope STA/LTA + kurtosis dual picker (developed
+for the 6 seismic clusters in §3.3) was extended to all 44,507 grade B and
+C events across the low and mid frequency bands. The goal was to improve
+onset accuracy for the ~15% of events with marginal AIC picks, thereby
+improving TDOA precision and location quality.
+
+**Result:** The picker refined 6,863 onsets (15.4% of candidates): 5,459
+via envelope STA/LTA (80%) and 1,404 via kurtosis (20%). Grade C events
+decreased by 26% (3,236 rescued to grade B). However, when the refined
+onsets were fed through the association and location pipeline, the results
+were severely degraded:
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Tier A | 4,286 | 675 (−84%) |
+| Tier B | 6,897 | 11,430 |
+| Tier C | 905 | 9,057 |
+| Jackknife unstable | 2.0% | 29.3% |
+
+**Why rejected:** The earlier onset picks expanded the effective time
+windows for the greedy association algorithm, causing it to match many
+more events by chance (43,055 → 82,148 associations). The resulting
+false associations produced poorly constrained locations — tier A collapsed
+by 84%, and jackknife instability increased from 2% to 29%. The onset
+picker is not inherently flawed (the refinements are individually
+reasonable), but its interaction with the current association algorithm
+is destructive. Applying improved onset picks would require either
+tightening association windows to compensate, adding waveform similarity
+checks to the association step, or restricting the picker to
+post-association refinement only.
+
+### A.3 Waveform Cross-Correlation for Differential Times
+
+**What was tested:** For each association, 10-second waveform windows
+centered on each event onset were extracted at all moorings, and all
+mooring pairs were cross-correlated to produce differential travel times
+with sub-sample precision. Cross-correlation TDOAs (for pairs with
+correlation coefficient cc ≥ 0.5) were substituted for onset-based TDOAs
+in the location algorithm.
+
+**Result:** Of 290,542 mooring pairs processed, only 10,952 (3.8%)
+exceeded the cc = 0.5 threshold. The median correlation coefficient across
+all pairs was 0.183. Only 6,240 of 53,152 associations (11.7%) had any
+usable cross-correlation pairs, and the median TDOA correction was 0.159 s.
+The impact on location quality was negligible: tier A changed by −1, tier B
+by +10, tier C by −24.
+
+**Why rejected:** The BRAVOSEIS array geometry fundamentally limits
+waveform cross-correlation effectiveness. Inter-mooring distances of
+27–176 km cause severe waveform distortion from multipath propagation,
+scattering, and different propagation geometries at each receiver. At
+these distances, the waveform arriving at one mooring bears little
+resemblance to the waveform at another. Effective cross-correlation-based
+location requires either much shorter inter-mooring distances (< 10 km),
+template/master event correlation within swarm clusters (same source,
+similar path), or sub-band correlation targeting the most coherent
+frequency range. The 290,542-pair computation is expensive for minimal
+gain and is not justified for routine processing. Cross-correlation may
+be revisited for targeted applications such as swarm relative relocation
+using the closest mooring pair (M4–M5, 27 km).
 
 ---
 
