@@ -1049,6 +1049,23 @@ feasible improvement.
 2. Formal location uncertainty from residual surface curvature
 3. Note flat-ocean/single-speed limitation in paper methods
 
+### Association Improvements Explored and Rejected
+
+Three association algorithm improvements were tested on branch
+`exploration/association-improvements` (2026-03-08) and all rejected:
+
+1. **Waveform similarity validation** (envelope CC < 0.3 rejection): −2.4%
+   tier A. Removed good events along with bad; better as post-location QC.
+2. **Class-aware association windows** (class-specific scaling + compatibility):
+   −39.5% tier A. Actively harmful — same event gets different CNN labels at
+   different moorings, fragmenting multi-mooring associations.
+3. **Iterative association-location refinement** (predict arrivals → refine):
+   −2.9% tier A, near-neutral. Baseline greedy clustering already near-optimal.
+
+Key finding: the baseline greedy windowed clustering is well-matched to the
+array geometry. The limiting factor is 4+ mooring detection count, not
+association quality. Documented in methods draft Appendix B.
+
 ## Project Notes
 
 - **International collaboration**: Spain, Germany, and United States.

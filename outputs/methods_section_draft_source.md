@@ -943,6 +943,119 @@ using the closest mooring pair (M4–M5, 27 km).
 
 ---
 
+## Appendix B: Rejected Association Improvements
+
+Three potential improvements to the cross-mooring association algorithm were
+systematically evaluated on the `exploration/association-improvements` branch,
+using the same detection catalogue and location pipeline as the baseline. Each
+modification was tested independently, and the full pipeline (associate →
+locate with grid-search TDOA) was re-run to measure the impact on location
+quality. All three were rejected after testing demonstrated that the baseline
+greedy windowed clustering algorithm — while conceptually simple — is already
+well-matched to the array geometry and data characteristics.
+
+The baseline for these tests uses 82,148 associations (the expanded set
+resulting from AIC-refined onsets), of which 53,152 are locatable (≥3
+moorings). The baseline produces 21,038 located events (tiers A+B+C), with
+660 tier A (≥4 moorings, residual < 1 s, jackknife-stable).
+
+### B.1 Waveform Similarity Validation
+
+**What was tested:** For each association, envelope snippets were extracted
+from the DAT files at all contributing moorings and cross-correlated between
+all mooring pairs. Associations where the median envelope cross-correlation
+fell below 0.3 were rejected; pairs falling below the threshold within
+otherwise retained associations were dropped (reducing the mooring count for
+that association).
+
+**Result:** The filter rejected 4,469 associations (8.4% of locatable) and
+dropped one mooring from 1,389 additional associations. The median envelope
+correlation across all pairs was 0.418 (IQR [0.348, 0.495]), with 11.0% of
+pairs falling below the 0.3 threshold. Net impact on location quality:
+−2.4% tier A (660 → 644), −9.2% tier B, −6.4% tier C, −7.8% total located.
+
+**Why rejected:** The envelope correlation correctly identified associations
+with dissimilar waveforms, but removing them did not improve location
+quality — it reduced total located counts without disproportionately removing
+poorly constrained events. The rejected 8.4% were not enriched in bad
+locations. This outcome reflects a fundamental property of the BRAVOSEIS
+array: inter-mooring distances of 27–176 km cause significant waveform
+distortion from multipath propagation and varying propagation geometries, so
+even legitimate same-event arrivals produce moderate correlations. Waveform
+similarity is better suited as a post-location quality metric than as a
+pre-association filter, because the location residual provides a more
+physically meaningful measure of association consistency than envelope shape.
+
+### B.2 Class-Aware Association Windows
+
+**What was tested:** Preliminary event classes were assigned using the hybrid
+CNN+MLP classifier predictions combined with feature-based heuristics. The
+association algorithm then applied class-specific window scaling (0.8× for
+icequakes, 1.5× for vessel noise) and enforced class compatibility checks
+— for example, a T-phase detection at one mooring could not associate with
+a vessel-noise detection at another.
+
+**Result:** This was the most harmful modification tested. Tier A collapsed
+by 39.5% (660 → 399). Total located events decreased by 9.1%. The algorithm
+produced more 2-mooring associations (+7,367) but fewer 4–6 mooring
+associations, directly degrading the multi-mooring coverage that tier A
+requires.
+
+**Why rejected:** The class compatibility check fragmented legitimate
+multi-mooring associations in which different moorings assigned different
+class labels to the same event. This is common because the hybrid CNN+MLP
+classifier was trained on single-mooring features (spectral slope, duration,
+peak frequency), and the same event can present different spectral
+characteristics at different moorings due to distance-dependent attenuation,
+SNR variation, and propagation effects. A moderate T-phase may appear as an
+icequake at a distant mooring where the high-frequency content is attenuated,
+or vice versa. The tighter icequake windows further broke associations for
+events near the class boundary. Pre-association classification is not
+reliable enough to constrain associations in this array — the classifier
+achieves 95% single-mooring accuracy, but cross-mooring label consistency is
+substantially lower.
+
+### B.3 Iterative Association-Location Refinement
+
+**What was tested:** A two-iteration refinement loop: (1) run the baseline
+association and location pipeline, (2) use the resulting locations to predict
+arrival times at all moorings, (3) search for unassociated detections within
+tight windows (2–8 s depending on tier) of the predicted arrivals and add
+them to the association, (4) drop associated events with residual > 3 s,
+(5) relocate. The process was repeated for a second iteration.
+
+**Result:** Iteration 1 added 28 events and dropped 343 (residual > 3 s),
+with 270 associations modified. Iteration 2 added 5 events and dropped 0,
+indicating near-convergence. Net impact: −0.1% total located, −2.9% tier A
+(660 → 641). The refinement was effectively neutral.
+
+**Why rejected:** The tight predicted-arrival search windows found very few
+unassociated detections near the expected times, indicating that the greedy
+associator already captures most detectable arrivals. The 343 events dropped
+for high residuals were primarily noise or multipath arrivals that did not
+affect tier assignments. The near-zero net change after two iterations
+confirms that the baseline associations are already close to optimal given
+the current detection catalogue. The iterative refinement adds computational
+cost (two full location passes per iteration) without measurable benefit.
+
+### Summary
+
+The three tested modifications span a representative range of association
+improvement strategies: quality filtering (waveform similarity), physical
+constraints (class-aware windows), and iterative refinement
+(location-informed re-association). The consistent result — no improvement
+or active degradation — demonstrates that the baseline greedy windowed
+clustering is robust for this array configuration. The key insight is that
+the association algorithm operates in a regime where the limiting factor is
+not association quality but the number of 4+ mooring detections of the same
+event. Association improvements cannot create multi-mooring detections that
+do not exist in the catalogue; they can only rearrange existing detections.
+The baseline algorithm's simplicity is an asset: it makes no assumptions
+about event class, waveform similarity, or location consistency that could
+introduce systematic biases.
+
+---
+
 *Document generated from the BRAVOSEIS research constitution and analysis
 scripts. All figures are reproducible from raw data using the scripts in
 `scripts/`. Constitution: `.specify/memory/constitution.md`.*
