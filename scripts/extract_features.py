@@ -42,13 +42,17 @@ NOVERLAP = 512
 FREQ_MAX = 250
 
 # === Feature extraction parameters ===
-PAD_SEC = 2.0  # seconds of context before/after event
+PRE_PICK_SEC = 5.0   # seconds before onset pick
+POST_PICK_SEC = 10.0  # seconds after onset pick
+WINDOW_SEC = PRE_PICK_SEC + POST_PICK_SEC  # fixed 15s window
 N_FREQ_BANDS = 10  # 25 Hz bands from 0–250 Hz
 BAND_WIDTH_HZ = FREQ_MAX / N_FREQ_BANDS  # 25 Hz each
 
 
 def compute_spectrogram_patch(data, onset_samp, end_samp, file_nsamples):
-    """Extract spectrogram patch for one event with padding.
+    """Extract spectrogram patch using fixed 15s window around onset pick.
+
+    Window: onset - 5s to onset + 10s (fixed, regardless of event duration).
 
     Returns
     -------
@@ -61,10 +65,15 @@ def compute_spectrogram_patch(data, onset_samp, end_samp, file_nsamples):
     end_rel : float
         Event end time relative to patch start (seconds).
     """
-    pad_samp = int(PAD_SEC * SAMPLE_RATE)
+    pre_samp = int(PRE_PICK_SEC * SAMPLE_RATE)
+    post_samp = int(POST_PICK_SEC * SAMPLE_RATE)
 
-    seg_start = max(0, onset_samp - pad_samp)
-    seg_end = min(file_nsamples, end_samp + pad_samp)
+    seg_start = onset_samp - pre_samp
+    seg_end = onset_samp + post_samp
+
+    if seg_start < 0 or seg_end > file_nsamples:
+        return None
+
     segment = data[seg_start:seg_end]
 
     if len(segment) < NPERSEG:
@@ -84,8 +93,8 @@ def compute_spectrogram_patch(data, onset_samp, end_samp, file_nsamples):
 
     Sxx_dB = 10 * np.log10(Sxx + 1e-20)
 
-    onset_rel = (onset_samp - seg_start) / SAMPLE_RATE
-    end_rel = (end_samp - seg_start) / SAMPLE_RATE
+    onset_rel = PRE_PICK_SEC
+    end_rel = PRE_PICK_SEC + (end_samp - onset_samp) / SAMPLE_RATE
 
     return freqs, times, Sxx_dB, Sxx, onset_rel, end_rel
 
@@ -378,7 +387,8 @@ def main():
     print("BRAVOSEIS Feature Extraction — Phase 1a")
     print(f"  Spectrogram: nperseg={NPERSEG}, noverlap={NOVERLAP}")
     print(f"  Frequency bands: {N_FREQ_BANDS} × {BAND_WIDTH_HZ:.0f} Hz")
-    print(f"  Context padding: ±{PAD_SEC}s")
+    print(f"  Fixed window: {WINDOW_SEC:.0f}s "
+          f"(pick − {PRE_PICK_SEC:.0f}s, pick + {POST_PICK_SEC:.0f}s)")
     print("=" * 60)
 
     cat = load_catalogue()
