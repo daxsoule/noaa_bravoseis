@@ -17,13 +17,14 @@ Spec: specs/001-event-detection/
 """
 
 import argparse
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
 from datetime import timedelta
 from pathlib import Path
 from scipy.signal import butter, sosfilt, spectrogram
 
-from read_dat import read_dat, read_header, list_mooring_files, MOORINGS, SAMPLE_RATE
+from read_dat import read_dat, read_header, list_mooring_files, MOORINGS, SAMPLE_RATE, get_data_dir
 
 
 def classic_sta_lta(data, nsta, nlta):
@@ -74,6 +75,7 @@ def trigger_onset(cft, threshold_on, threshold_off):
 # === Paths ===
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "data"
+CHECKPOINT_DIR = OUTPUT_DIR / "detection_checkpoints"
 
 # === Detection parameters (from plan R2) ===
 STA_SEC = 2.0       # Short-term average window (seconds)
@@ -392,10 +394,25 @@ def process_file(filepath, mooring_key, pass_nums=None):
     return all_detections
 
 
-def process_mooring(mooring_key, file_filter=None, pass_nums=None):
-    """Process all files for one mooring."""
+def _process_file_worker(args):
+    """Top-level wrapper for multiprocessing Pool.map."""
+    filepath, mooring_key, pass_nums = args
+    return process_file(filepath, mooring_key, pass_nums=pass_nums)
+
+
+def process_mooring(mooring_key, file_filter=None, pass_nums=None,
+                    data_root=None, n_workers=1):
+    """Process all files for one mooring.
+
+    Parameters
+    ----------
+    n_workers : int
+        Number of parallel workers. 1 = sequential (original behavior).
+    """
+    if data_root is None:
+        data_root = DATA_ROOT
     info = MOORINGS[mooring_key]
-    mooring_dir = DATA_ROOT / info["data_dir"]
+    mooring_dir = data_root / get_data_dir(info, data_root)
 
     if not mooring_dir.exists():
         print(f"  WARNING: {mooring_dir} not found, skipping")
@@ -407,16 +424,31 @@ def process_mooring(mooring_key, file_filter=None, pass_nums=None):
         catalog = [f for f in catalog
                    if f"{f['file_number']:08d}" in file_filter]
 
-    all_events = []
-    for i, entry in enumerate(catalog):
-        filepath = entry["path"]
-        fname = filepath.stem
-        detections = process_file(filepath, mooring_key, pass_nums=pass_nums)
-        all_events.extend(detections)
+    if n_workers > 1 and len(catalog) > 1:
+        # Parallel processing
+        work_items = [(entry["path"], mooring_key, pass_nums)
+                      for entry in catalog]
+        all_events = []
+        completed = 0
+        with mp.Pool(processes=n_workers) as pool:
+            for result in pool.imap_unordered(_process_file_worker, work_items,
+                                              chunksize=4):
+                all_events.extend(result)
+                completed += 1
+                if completed % 50 == 0 or completed == len(catalog):
+                    print(f"    {mooring_key}: {completed}/{len(catalog)} files, "
+                          f"{len(all_events)} events so far")
+    else:
+        # Sequential processing
+        all_events = []
+        for i, entry in enumerate(catalog):
+            filepath = entry["path"]
+            detections = process_file(filepath, mooring_key, pass_nums=pass_nums)
+            all_events.extend(detections)
 
-        if (i + 1) % 10 == 0 or (i + 1) == len(catalog):
-            print(f"    {mooring_key}: {i+1}/{len(catalog)} files, "
-                  f"{len(all_events)} events so far")
+            if (i + 1) % 10 == 0 or (i + 1) == len(catalog):
+                print(f"    {mooring_key}: {i+1}/{len(catalog)} files, "
+                      f"{len(all_events)} events so far")
 
     return all_events
 
@@ -452,7 +484,17 @@ def main():
                         help="Process single file number (e.g., 00001282)")
     parser.add_argument("--pass", type=str, default="all", dest="det_pass",
                         help="Which pass(es) to run: 1, 2, 3, or 'all' (default: all)")
+    parser.add_argument("--data-root", type=str, default=None,
+                        help="Root directory containing mooring data folders "
+                             "(default: subset at /home/jovyan/my_data/bravoseis/NOAA)")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of parallel workers per mooring (default: 1)")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from per-mooring checkpoints (skip completed moorings)")
     args = parser.parse_args()
+
+    # Resolve data root
+    data_root = Path(args.data_root) if args.data_root else DATA_ROOT
 
     # Parse pass selection
     if args.det_pass == "all":
@@ -466,8 +508,12 @@ def main():
     pass_descs = [f"Pass {p}: {PASSES[p]['label']} ({PASSES[p]['filter']} "
                   f"{PASSES[p]['cutoff']} Hz)" for p in pass_nums]
 
+    n_workers = args.workers
+
     print("=" * 60)
     print("BRAVOSEIS Event Detection — Three-Pass Strategy")
+    print(f"  Data root: {data_root}")
+    print(f"  Workers: {n_workers}")
     print(f"  STA={STA_SEC}s, LTA={LTA_SEC}s, "
           f"trigger={TRIGGER}, detrigger={DETRIGGER}")
     for desc in pass_descs:
@@ -489,18 +535,66 @@ def main():
     else:
         moorings = MOORING_KEYS
 
+    # Checkpoint setup
+    suffix = ""
+    if args.data_root:
+        suffix += "_full"
+    if args.det_pass != "all":
+        suffix += f"_pass{args.det_pass}"
+    if args.tune:
+        suffix += "_tune"
+    elif args.file:
+        suffix += f"_{args.file}"
+    elif args.mooring:
+        suffix += f"_{args.mooring}"
+
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Load existing checkpoints if resuming
+    completed_moorings = {}
+    if args.resume:
+        for mkey in moorings:
+            ckpt = CHECKPOINT_DIR / f"checkpoint{suffix}_{mkey}.parquet"
+            if ckpt.exists():
+                ckpt_df = pd.read_parquet(ckpt)
+                completed_moorings[mkey] = ckpt_df
+                print(f"  RESUME: loaded {len(ckpt_df)} events for {mkey} from checkpoint")
+
     # Process
     all_events = []
     for mkey in moorings:
+        if mkey in completed_moorings:
+            print(f"\n--- {mkey}: skipped (checkpoint exists) ---")
+            continue
         info = MOORINGS[mkey]
         print(f"\n--- {mkey} / {info['name']} ({info['hydrophone']}) ---")
         events = process_mooring(mkey, file_filter=file_filter,
-                                pass_nums=pass_nums)
+                                pass_nums=pass_nums, data_root=data_root,
+                                n_workers=n_workers)
         all_events.extend(events)
         print(f"  {mkey}: {len(events)} events detected")
 
-    # Build catalogue
-    df = build_catalogue(all_events)
+        # Save per-mooring checkpoint
+        if events:
+            ckpt_df = build_catalogue(events)
+            ckpt_path = CHECKPOINT_DIR / f"checkpoint{suffix}_{mkey}.parquet"
+            ckpt_df.to_parquet(ckpt_path, index=False)
+            print(f"  Checkpoint saved: {ckpt_path}")
+
+    # Merge checkpointed moorings with newly processed ones
+    checkpoint_dfs = list(completed_moorings.values())
+    if all_events:
+        checkpoint_dfs.append(pd.DataFrame(all_events))
+    if checkpoint_dfs:
+        merged = pd.concat(checkpoint_dfs, ignore_index=True)
+        # Drop event_id from checkpoints (will re-assign)
+        if "event_id" in merged.columns:
+            merged = merged.drop(columns=["event_id"])
+    else:
+        merged = pd.DataFrame()
+
+    # Build final catalogue
+    df = build_catalogue(merged.to_dict("records") if len(merged) > 0 else [])
 
     if len(df) == 0:
         print("\nNo events detected!")
@@ -525,16 +619,6 @@ def main():
 
     # Save
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    suffix = ""
-    if args.det_pass != "all":
-        suffix += f"_pass{args.det_pass}"
-    if args.tune:
-        suffix += "_tune"
-    elif args.file:
-        suffix += f"_{args.file}"
-    elif args.mooring:
-        suffix += f"_{args.mooring}"
-
     outpath = OUTPUT_DIR / f"event_catalogue{suffix}.parquet"
     df.to_parquet(outpath, index=False)
     print(f"\nSaved: {outpath} ({len(df)} events)")

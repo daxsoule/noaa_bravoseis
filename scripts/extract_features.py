@@ -22,19 +22,21 @@ Spec: specs/002-event-discrimination/
 """
 
 import argparse
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from datetime import timedelta
 from scipy.signal import spectrogram
 
-from read_dat import read_dat, MOORINGS, SAMPLE_RATE
+from read_dat import read_dat, MOORINGS, SAMPLE_RATE, get_data_dir
 
 # === Paths ===
 DATA_ROOT = Path("/home/jovyan/my_data/bravoseis/NOAA")
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 DATA_DIR = OUTPUT_DIR / "data"
 PATCH_DIR = DATA_DIR / "event_patches"
+CHECKPOINT_DIR = DATA_DIR / "feature_checkpoints"
 
 # === Spectrogram parameters (matching spec 001) ===
 NPERSEG = 1024
@@ -206,12 +208,112 @@ def load_catalogue():
     return cat
 
 
+def _process_file_group(args):
+    """Worker function: extract features for all events in one file.
+
+    Returns list of dicts (one per event, with _event_id key).
+    """
+    mooring, file_num, events_data, data_root = args
+
+    info = MOORINGS[mooring]
+    mooring_dir = data_root / get_data_dir(info, data_root)
+    dat_path = mooring_dir / f"{file_num:08d}.DAT"
+
+    results = []
+    if not dat_path.exists():
+        for ev in events_data:
+            results.append({"_event_id": ev["event_id"]})
+        return results
+
+    file_ts, data, _ = read_dat(dat_path)
+    file_nsamples = len(data)
+
+    for ev in events_data:
+        onset_offset_s = (ev["onset_utc"] - file_ts).total_seconds()
+        end_offset_s = (ev["end_utc"] - file_ts).total_seconds()
+        onset_samp = int(onset_offset_s * SAMPLE_RATE)
+        end_samp = int(end_offset_s * SAMPLE_RATE)
+
+        if onset_samp < 0 or onset_samp >= file_nsamples:
+            results.append({"_event_id": ev["event_id"]})
+            continue
+
+        end_samp = min(end_samp, file_nsamples)
+
+        result = compute_spectrogram_patch(
+            data, onset_samp, end_samp, file_nsamples
+        )
+
+        if result is None:
+            results.append({"_event_id": ev["event_id"]})
+            continue
+
+        freqs, times, Sxx_dB, Sxx_linear, onset_rel, end_rel = result
+
+        feats = extract_features_from_patch(
+            freqs, times, Sxx_dB, Sxx_linear, onset_rel, end_rel
+        )
+        feats["_event_id"] = ev["event_id"]
+        results.append(feats)
+
+    return results
+
+
+def process_mooring_features(cat, mooring, data_root, n_workers=1):
+    """Extract features for all events in one mooring.
+
+    Returns DataFrame with feature columns + event_id.
+    """
+    mcat = cat[cat["mooring"] == mooring].copy()
+    if len(mcat) == 0:
+        return pd.DataFrame()
+
+    # Build work items grouped by file
+    groups = mcat.groupby("file_number")
+    work_items = []
+    for file_num, group in groups:
+        events_data = [
+            {"event_id": row["event_id"],
+             "onset_utc": row["onset_utc"],
+             "end_utc": row["end_utc"]}
+            for _, row in group.iterrows()
+        ]
+        work_items.append((mooring, file_num, events_data, data_root))
+
+    n_groups = len(work_items)
+    all_features = []
+
+    if n_workers > 1 and n_groups > 1:
+        completed = 0
+        with mp.Pool(processes=n_workers) as pool:
+            for result in pool.imap_unordered(_process_file_group, work_items,
+                                              chunksize=4):
+                all_features.extend(result)
+                completed += 1
+                if completed % 100 == 0 or completed == n_groups:
+                    print(f"    {mooring}: {completed}/{n_groups} files, "
+                          f"{len(all_features)} events")
+    else:
+        for i, item in enumerate(work_items):
+            result = _process_file_group(item)
+            all_features.extend(result)
+            if (i + 1) % 50 == 0 or (i + 1) == n_groups:
+                print(f"    {mooring}: {i+1}/{n_groups} files, "
+                      f"{len(all_features)} events")
+
+    feat_df = pd.DataFrame(all_features)
+    return feat_df
+
+
 def process_catalogue(cat, mooring_filter=None, file_filter=None,
-                      save_patches=True):
+                      save_patches=True, data_root=None):
     """Extract features for all events, grouped by (mooring, file_number).
 
     Returns DataFrame with feature columns appended.
+    Legacy interface for backward compatibility (single-threaded).
     """
+    if data_root is None:
+        data_root = DATA_ROOT
     if mooring_filter:
         cat = cat[cat["mooring"] == mooring_filter].copy()
     if file_filter:
@@ -235,7 +337,7 @@ def process_catalogue(cat, mooring_filter=None, file_filter=None,
 
         # Resolve file path
         info = MOORINGS[mooring]
-        mooring_dir = DATA_ROOT / info["data_dir"]
+        mooring_dir = data_root / get_data_dir(info, data_root)
         dat_path = mooring_dir / f"{file_num:08d}.DAT"
 
         if not dat_path.exists():
@@ -381,57 +483,140 @@ def main():
                         help="Process single file number (e.g., 00001282)")
     parser.add_argument("--no-patches", action="store_true",
                         help="Skip saving spectrogram patches (faster)")
+    parser.add_argument("--catalogue", type=str, default=None,
+                        help="Path to event catalogue parquet "
+                             "(default: outputs/data/event_catalogue.parquet)")
+    parser.add_argument("--data-root", type=str, default=None,
+                        help="Root directory containing mooring data folders")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of parallel workers per mooring (default: 1)")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from per-mooring checkpoints")
     args = parser.parse_args()
 
+    data_root = Path(args.data_root) if args.data_root else DATA_ROOT
+
     print("=" * 60)
-    print("BRAVOSEIS Feature Extraction — Phase 1a")
+    print("BRAVOSEIS Feature Extraction")
+    print(f"  Data root: {data_root}")
+    print(f"  Workers: {args.workers}")
     print(f"  Spectrogram: nperseg={NPERSEG}, noverlap={NOVERLAP}")
     print(f"  Frequency bands: {N_FREQ_BANDS} × {BAND_WIDTH_HZ:.0f} Hz")
     print(f"  Fixed window: {WINDOW_SEC:.0f}s "
           f"(pick − {PRE_PICK_SEC:.0f}s, pick + {POST_PICK_SEC:.0f}s)")
     print("=" * 60)
 
-    cat = load_catalogue()
-    print(f"Loaded {len(cat):,} events")
+    # Load catalogue
+    if args.catalogue:
+        cat_path = Path(args.catalogue)
+    else:
+        cat_path = DATA_DIR / "event_catalogue.parquet"
+    cat = pd.read_parquet(cat_path)
+    cat["onset_utc"] = pd.to_datetime(cat["onset_utc"])
+    cat["end_utc"] = pd.to_datetime(cat["end_utc"])
+    print(f"Loaded {len(cat):,} events from {cat_path.name}")
 
-    if args.mooring:
-        print(f"Filtering to mooring: {args.mooring}")
-    if args.file:
-        print(f"Filtering to file: {args.file}")
-
-    cat, feat_df = process_catalogue(
-        cat,
-        mooring_filter=args.mooring,
-        file_filter=args.file,
-        save_patches=not args.no_patches,
-    )
-
-    if len(feat_df) == 0:
-        print("No features extracted!")
-        return
-
-    print_summary(feat_df)
-
-    # Merge features with catalogue metadata
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Save features table (event_id + all features)
-    feature_cols = [c for c in feat_df.columns if not c.startswith("_")]
-    output_df = cat[["event_id", "mooring", "file_number", "detection_band",
-                      "onset_utc", "duration_s", "snr"]].copy()
-    for col in feature_cols:
-        output_df[col] = feat_df[col].values
-
+    # Determine suffix for output files
     suffix = ""
+    if args.catalogue and "_full" in str(args.catalogue):
+        suffix += "_full"
     if args.mooring:
         suffix += f"_{args.mooring}"
     if args.file:
         suffix += f"_{args.file}"
 
+    # Use legacy single-threaded path for small runs
+    if args.file or (args.mooring and args.workers <= 1):
+        cat, feat_df = process_catalogue(
+            cat,
+            mooring_filter=args.mooring,
+            file_filter=args.file,
+            save_patches=not args.no_patches,
+            data_root=data_root,
+        )
+        if len(feat_df) == 0:
+            print("No features extracted!")
+            return
+        print_summary(feat_df)
+        feature_cols = [c for c in feat_df.columns if not c.startswith("_")]
+        output_df = cat[["event_id", "mooring", "file_number", "detection_band",
+                          "onset_utc", "duration_s", "snr"]].copy()
+        for col in feature_cols:
+            output_df[col] = feat_df[col].values
+        outpath = DATA_DIR / f"event_features{suffix}.parquet"
+        output_df.to_parquet(outpath, index=False)
+        print(f"\nSaved: {outpath} ({len(output_df):,} events)")
+        return
+
+    # Parallel per-mooring processing with checkpoints
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.mooring:
+        moorings = [args.mooring]
+    else:
+        moorings = sorted(cat["mooring"].unique())
+
+    # Load existing checkpoints if resuming
+    completed_moorings = {}
+    if args.resume:
+        for mkey in moorings:
+            ckpt = CHECKPOINT_DIR / f"features{suffix}_{mkey}.parquet"
+            if ckpt.exists():
+                ckpt_df = pd.read_parquet(ckpt)
+                completed_moorings[mkey] = ckpt_df
+                print(f"  RESUME: loaded {len(ckpt_df):,} features for {mkey}")
+
+    all_dfs = list(completed_moorings.values())
+
+    for mkey in moorings:
+        if mkey in completed_moorings:
+            print(f"\n--- {mkey}: skipped (checkpoint exists) ---")
+            continue
+
+        n_events = len(cat[cat["mooring"] == mkey])
+        print(f"\n--- {mkey} ({n_events:,} events) ---")
+
+        feat_df = process_mooring_features(
+            cat, mkey, data_root, n_workers=args.workers
+        )
+
+        if len(feat_df) == 0:
+            print(f"  {mkey}: no features extracted")
+            continue
+
+        # Merge with catalogue metadata
+        mcat = cat[cat["mooring"] == mkey].copy()
+        feature_cols = [c for c in feat_df.columns
+                        if not c.startswith("_")]
+        # Avoid column collisions: drop feature cols that also exist in catalogue
+        cat_keep_cols = ["event_id", "mooring", "file_number", "detection_band",
+                         "onset_utc", "snr"]
+        merged = mcat[cat_keep_cols].merge(
+            feat_df.rename(columns={"_event_id": "event_id"}),
+            on="event_id", how="left"
+        )
+        output_df = merged[cat_keep_cols + feature_cols].copy()
+
+        # Save checkpoint
+        ckpt_path = CHECKPOINT_DIR / f"features{suffix}_{mkey}.parquet"
+        output_df.to_parquet(ckpt_path, index=False)
+        print(f"  Checkpoint: {ckpt_path} ({len(output_df):,} events)")
+        all_dfs.append(output_df)
+
+    # Merge all moorings
+    if all_dfs:
+        final_df = pd.concat(all_dfs, ignore_index=True)
+        final_df = final_df.sort_values("onset_utc").reset_index(drop=True)
+    else:
+        print("No features extracted!")
+        return
+
+    print_summary(final_df)
+
     outpath = DATA_DIR / f"event_features{suffix}.parquet"
-    output_df.to_parquet(outpath, index=False)
-    print(f"\nSaved: {outpath} ({len(output_df):,} events, "
-          f"{len(feature_cols)} features)")
+    final_df.to_parquet(outpath, index=False)
+    print(f"\nSaved: {outpath} ({len(final_df):,} events)")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

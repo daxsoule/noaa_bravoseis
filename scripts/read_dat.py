@@ -153,6 +153,7 @@ MOORINGS = {
         "deployed": datetime(2019, 1, 12, 13, 27),
         "recovered": datetime(2020, 2, 20),
         "data_dir": "m1-h17c-bra28",
+        "data_dir_full": "H17C_M1_BRA28",
     },
     "m2": {
         "name": "BRA29", "hydrophone": "H36",
@@ -161,6 +162,7 @@ MOORINGS = {
         "deployed": datetime(2019, 1, 12, 19, 24),
         "recovered": datetime(2020, 2, 20),
         "data_dir": "m2-h36-bra29",
+        "data_dir_full": "H36_M2_BRA29",
     },
     "m3": {
         "name": "BRA30", "hydrophone": "H13",
@@ -169,6 +171,7 @@ MOORINGS = {
         "deployed": datetime(2019, 1, 13, 13, 23),
         "recovered": datetime(2020, 2, 18),
         "data_dir": "m3-h13-bra30",
+        "data_dir_full": "H13_M3_BRA30",
     },
     "m4": {
         "name": "BRA31", "hydrophone": "H21",
@@ -177,6 +180,7 @@ MOORINGS = {
         "deployed": datetime(2019, 1, 13, 14, 7),
         "recovered": datetime(2020, 2, 15),
         "data_dir": "m4-h21-bra31",
+        "data_dir_full": "H21_M4_BRA31",
     },
     "m5": {
         "name": "BRA32", "hydrophone": "H24",
@@ -185,6 +189,7 @@ MOORINGS = {
         "deployed": datetime(2019, 1, 10, 17, 31),
         "recovered": datetime(2020, 2, 17),
         "data_dir": "m5-h24-bra32",
+        "data_dir_full": "H24_M5_BRA32",
     },
     "m6": {
         "name": "BRA33", "hydrophone": "H41",
@@ -193,8 +198,21 @@ MOORINGS = {
         "deployed": datetime(2019, 1, 13, 21, 26),
         "recovered": datetime(2020, 2, 17),
         "data_dir": "m6-h41-bra33",
+        "data_dir_full": "H41_M6_BRA33",
     },
 }
+
+
+def get_data_dir(mooring_info, data_root):
+    """Return the correct data_dir key for a given data root.
+
+    Checks for the full dataset directory name first, then falls back
+    to the subset directory name.
+    """
+    full_dir = data_root / mooring_info["data_dir_full"]
+    if full_dir.exists():
+        return mooring_info["data_dir_full"]
+    return mooring_info["data_dir"]
 
 
 if __name__ == "__main__":

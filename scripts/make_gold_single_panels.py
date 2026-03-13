@@ -49,7 +49,7 @@ BAND_FILTERS = {
 # === Spectrogram display range per band (show ~2× above bandpass) ===
 BAND_FREQ_MAX = {
     "low":  50,
-    "mid":  60,
+    "mid":  250,
     "high": 250,
 }
 
