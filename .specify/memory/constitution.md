@@ -840,6 +840,44 @@ pattern of T-phases and provides independent support for the cryogenic
 classification. The pattern is consistent with increased calving, ice
 breakup, and glacial activity during warmer months.
 
+### Phase 3 — Frequency-Band Reclassification (in progress)
+
+Phase 1 and Phase 2 classifications suffer from a **circular labeling
+problem**: Phase 1 labels derived from handcrafted feature thresholds +
+noisy HDBSCAN clusters, Phase 2 CNN propagated those errors to 207K bulk
+events. Additionally, **fin whale 20 Hz calls** dominate the 14–30 Hz range,
+contaminating clusters and making seismic event identification difficult.
+
+**New approach — frequency-band separation before classification**:
+
+| Band | Range | Target signals | Status |
+|------|-------|----------------|--------|
+| Low | 1–14 Hz | T-phases, local earthquakes | Feature extraction + clustering complete |
+| Mid | 14–30 Hz | Whale calls (fin whale 20 Hz) | Set aside for separate study |
+| High | >30 Hz | Icequakes, vessel noise | Not yet built |
+
+**Rationale**: Rather than trying to separate signal types in a mixed-frequency
+feature space, the data is bandpass filtered before feature extraction and
+clustering. This lets physics do the primary separation: seismic events
+propagating through the SOFAR channel concentrate below 14 Hz, ice cracking
+produces broadband energy above 30 Hz, and fin whale calls dominate the
+14–30 Hz band.
+
+**Low-band (1–14 Hz) pipeline**:
+- 4th-order Butterworth bandpass applied to raw signal before spectrogram
+- nperseg=2048 for better low-frequency resolution (~0.49 Hz per bin)
+- 6 feature bands of ~2 Hz each (1–3, 3–5, 5–7, 7–9, 9–11, 11–14 Hz)
+- 84,698 events from the low detection band
+- UMAP + HDBSCAN: **10 clusters**, silhouette 0.324, 1.4% noise
+- Two distinct populations emerged:
+  - **2–4 Hz** (~14K events): 6 clusters — possibly local earthquakes or
+    very low-frequency T-phases
+  - **10–13 Hz** (~69K events): 4 clusters including one mega-cluster (56K) —
+    likely T-phases
+
+Scripts: `extract_features_lowband.py`, `make_lowband_panels.py`
+Data: `event_features_lowband.parquet`, `umap_coordinates_lowband.parquet`
+
 ### Source Location (Grid-Search TDOA)
 
 Event locations are computed by **grid-search TDOA** (time-difference-of-arrival)
