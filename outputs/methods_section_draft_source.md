@@ -705,64 +705,88 @@ by out-of-band energy. Spectrograms were computed with nperseg=2048
 bands of ~2 Hz each were extracted within the 1–14 Hz range.
 
 **Whale contamination filter:** Events whose original catalogue peak
-frequency exceeded 14 Hz were removed prior to clustering. This
-eliminated 32,495 events (38.4% of low-band detections), predominantly
-fin whale 20 Hz calls with sub-14 Hz spectral leakage that had triggered
-the low-band detector. After filtering: 52,175 events remained.
+frequency exceeded 17 Hz were removed prior to clustering. This threshold
+was determined empirically: cross-validation against Singer's manual
+catalogue (§7.2) and the Orca OBS catalogue (§7.1) showed that a 14 Hz
+cutoff — initially chosen to match the bandpass edge — was discarding
+genuine T-phase events whose broadband spectral peak happened to fall
+just above the filter boundary. Of 58 Singer-labeled earthquakes removed
+by the 14 Hz cutoff, 34 (59%) had catalogue peak frequencies of only
+14.6 Hz, and their lowband features (duration, spectral slope, SNR) were
+statistically indistinguishable from accepted T-phases. Raising the
+threshold to 17 Hz recovered these events while still excluding the
+fin whale 20 Hz band. After filtering: 78,487 events remained (6,211
+removed).
 
 **Clustering:** UMAP (n_neighbors=15, min_dist=0.01) followed by HDBSCAN
-(min_cluster_size=200, EOM selection method) produced 8 clusters plus
-noise (6,278 noise points, 12.0%).
+(min_cluster_size=500, EOM selection method) produced 6 clusters plus
+noise (2,121 noise points, 2.7%), with silhouette score 0.399.
 
 **Gold-standard review:** For each cluster, 15 events were selected via
-stratified sampling and reviewed as individual waveform + spectrogram
-panels. All clusters were cross-referenced against the R/V *Sarmiento
-de Gamboa* cruise report (survey line schedule and source configurations)
-to identify active-source survey artifacts.
+stratified sampling across UMAP centroid distance quintiles and reviewed
+as individual waveform + spectrogram panels. All clusters were
+cross-referenced against the R/V *Sarmiento de Gamboa* cruise report
+(survey line schedule and source configurations) to identify
+active-source survey artifacts.
 
 **Lowband cluster results:**
 
 | Cluster | Events | Median freq | Verdict | Signal type |
 |---------|--------|-------------|---------|-------------|
-| lowband_7 | 645 | 11.7 Hz | Accept | T-phase (highest confidence) |
-| lowband_0 | 5,195 | 9.3 Hz | Accept | T-phase / seismic |
-| lowband_6 (SNR>=6) | 8,565 | 9.8 Hz | Accept | T-phases + local earthquakes |
-| lowband_6 (SNR<6) | ~23,800 | 9.8 Hz | Defer | Weak, mixed quality |
-| lowband_2 | 312 | 3.4 Hz | Consult | Tonal 2–5 Hz, unknown source |
-| lowband_1 | 643 | 2.0 Hz | Defer | Low-SNR, possibly seismic |
-| lowband_5 | 488 | 3.4 Hz | Discard | Deployment noise artifacts |
-| lowband_4 | 3,076 | 2.0 Hz | Discard | STA/LTA false triggers |
-| lowband_3 | 3,170 | 2.4 Hz | Discard | Ambient noise / mixed |
+| lowband_1 | 7,970 | 9.8 Hz | Accept | Strong T-phases (highest confidence) |
+| lowband_2 (SNR>=6) | 12,333 | 10.3 Hz | Accept | T-phases (mega-cluster, SNR filtered) |
+| lowband_0 (SNR>=6) | 891 | 12.7 Hz | Accept | Recovered borderline T-phases |
+| lowband_3 | 1,518 | 2.0 Hz | Discard | Ultra-low frequency, negative slope |
+| lowband_4 | 3,394 | 2.9 Hz | Discard | Ambient noise, steep negative slope |
+| lowband_5 | 6,880 | 2.4 Hz | Discard | Low-frequency noise |
 
-**Total accepted for seismic catalogue: 14,405 events** from lowband
-review (lowband_7 + lowband_0 + lowband_6 with SNR >= 6).
+**Total accepted for seismic catalogue: 21,194 events** from lowband
+review (lowband_1 + lowband_2 with SNR >= 6 + lowband_0 with SNR >= 6).
 
-**Key findings from lowband gold-standard review:**
+**Highband pipeline (30–450 Hz):**
 
-- **lowband_7** shows textbook T-phase morphology: emergent onset,
-  spindle-shaped amplitude envelope, energy concentrated between 8–14 Hz.
-  Includes an August 21, 2019 seismic swarm (50 events in 4 hours).
-  Multi-mooring arrivals with consistent moveout confirm seismic origin.
-  This is our highest-confidence T-phase cluster.
+The same frequency-band separation approach was applied to events
+detected in the high-frequency band (>30 Hz). A 4th-order Butterworth
+bandpass (30–450 Hz) was applied before spectrogram computation, with
+nperseg=1024 (~1 Hz resolution at 1 kHz sample rate) and 6 feature
+bands spanning 30–450 Hz. The instrument response extends to ~250 Hz;
+energy above this is outside the useful range but included in feature
+extraction to capture any aliased content.
 
-- **lowband_5** events are concentrated on January 12–13, 2019 (mooring
-  deployment dates), with M3 and M6 dominant. These were identified as
-  ship noise from deployment operations — not airgun pulses, as the
-  active-source survey did not begin until January 21.
+**Highband clustering:** UMAP + HDBSCAN produced 4 clusters plus noise
+(3,927 noise, 4.9%), silhouette 0.320, from 79,947 events.
 
-- **lowband_2** contains quasi-monochromatic 2–5 Hz signals with tonal,
-  sinusoidal character and harmonics — inconsistent with seismic events
-  or known biological sources. Currently under consultation with R. Dziak
-  (NOAA/PMEL) for possible identification.
+**Highband gold-standard review:**
 
-- **SNR >= 6 filter** applied to the mega-cluster (lowband_6, 32,365
-  events) isolates 8,565 events with clear seismic morphology, including
-  both emergent T-phases and impulsive local earthquakes. The remaining
-  ~23,800 low-SNR events are deferred pending further review.
+| Cluster | Events | Peak freq | IQ rate | Verdict |
+|---------|--------|-----------|---------|---------|
+| highband_0 | 34,069 | 55 Hz | 93% | Accept — clean icequakes |
+| highband_1 | 21,333 | 280 Hz | 33% | Discard — mixed icequake/humpback/noise |
+| highband_2 | 18,359 | 57 Hz | 73% | Accept — icequakes (systematic late picks) |
+| highband_3 | 2,259 | 61 Hz | 80% | Accept — long-duration icequakes (late picks) |
 
-**Highband (>30 Hz) pipeline:** The same frequency-band separation
-approach will be applied to events with energy above 30 Hz to distinguish
-icequakes from vessel noise. This pipeline has not yet been implemented.
+**Total accepted for cryogenic catalogue: 54,687 events** (highband_0 +
+highband_2 + highband_3). Highband_1 was discarded: only 33% of reviewed
+panels were icequakes, with 27% identified as humpback whale calls that
+extend above 30 Hz, and the remainder noise or ambiguous. The cluster's
+unusual spectral profile (positive slope, 280 Hz peak — above the 250 Hz
+instrument response) further supports exclusion.
+
+**Late onset pick caveat:** Highband_2 (7/11 icequake panels) and
+highband_3 (8/12 icequake panels) exhibited systematic late onset picks
+— the STA/LTA trigger point was visibly after the true signal onset. This
+bias affects TDOA-based locations for cryogenic events and should be
+considered when interpreting location precision.
+
+**Combined Phase 3 catalogue:** The lowband and highband pipelines were
+combined into a single classified catalogue of **75,881 events**: 21,194
+seismic (1–14 Hz, T-phases) and 54,687 cryogenic (>30 Hz, icequakes).
+Events in the 14–30 Hz midband (predominantly whale calls) are excluded
+and reserved for a separate biological acoustics study.
+
+Scripts: `extract_features_lowband.py`, `cluster_lowband.py`,
+`extract_features_highband.py`, `cluster_highband.py`,
+`make_highband_panels.py`, `assemble_phase3_catalogue.py`.
 
 This revision supersedes the Phase 1 and Phase 2 combined results
 reported in §4.1–4.2.
@@ -1118,101 +1142,84 @@ reliable.
 
 The co-deployed Orca OBS/land seismometer network independently located
 5,789 earthquakes in the Bransfield Strait during the same period. Due to
-the hydrophone duty cycle, only **636 Orca events (11%)** fall within our
-recording windows.
+the hydrophone duty cycle (~8.7% temporal coverage, 848 hours out of
+9,734), only **636 Orca events (11%)** fall within our recording windows.
 
 Of these 636 covered earthquakes:
-- **89% (567)** produced at least one hydrophone detection within 5 minutes
-  of the seismic origin time, confirming high detector sensitivity
-- **43% (275)** matched T-phase-labeled events specifically
-- **57% (362)** were detected but fell below classification thresholds
-  (median power 41 dB vs. 48 dB cutoff) — consistent with smaller-magnitude
-  events producing weaker hydroacoustic signatures
-- **Median T-phase arrival delay: 28.2 s** — physically consistent with
-  ~40 km propagation at ~1.45 km/s effective water speed
+- **84.9% (540)** produced at least one hydrophone detection within
+  30 seconds, confirming high detector sensitivity
+- **74.7% (475)** appear in the Phase 3 combined catalogue — 209 in both
+  seismic and cryogenic bands, 248 cryogenic only, 18 seismic only
+- **10.2% (65)** were detected but fell into discarded clusters (noise,
+  low-SNR, or the mixed highband_1 cluster)
+- **15.1% (96)** were not detected at all — below our STA/LTA threshold
+- **Median time offset: 3.6 s** for matched events
 
-The United States Geological Survey (USGS) global catalogue contains only 4 events ≥M4.6 in the study region
-during this period, confirming that Bransfield Strait seismicity is
-predominantly local and small-magnitude, well below the global network
-detection threshold.
+The USGS global catalogue contains only 4 events ≥M4.6 in the study
+region during this period, confirming that Bransfield Strait seismicity
+is predominantly local and small-magnitude, well below the global
+network detection threshold.
 
 ### 7.2 Comparison with Singer Manual Catalogue
 
 Singer (NOAA/PMEL) independently analyzed the same hydrophone data using
 manual spectrogram inspection and picking, producing a comprehensive
-catalogue of 18,505 events classified as earthquake (EQ, 2,253), icequake
-(IQ, 13,797), unknown (IDK, 2,010), and seismic swarm (SS, ~700). This
+catalogue of 18,502 events classified as earthquake (EQ, 2,255), icequake
+(IQ, 13,796), unknown (IDK, 2,010), and other categories (441). This
 catalogue represents a substantial manual effort and provides valuable
 context for evaluating our automated approach.
 
-**Event matching:** Singer's catalogue covers January–June 2019 (the first
-~5 months of the deployment). Our current pipeline processes a subset of
-the full recording archive (717 of ~6,000+ DAT files, 24 GB of ~423 GB),
-so temporal overlap is limited. Of Singer's events that fall within our
-processed recording windows, we matched **1,275 (82%)** within a 30-second
-tolerance. The high match rate and low median time offset (6.1 s) confirm
-that both methods are detecting the same physical events where data
-coverage overlaps. Match statistics will improve as the full archive is
-processed.
+**Temporal coverage:** The hydrophone array operated on a duty cycle that
+yielded ~8.7% temporal coverage (848 hours across 717 DAT files). Of
+Singer's 18,502 events, **1,559 (8.4%)** fall within our coverage windows.
+Of those, **1,275 (81.8%)** matched at least one detection within a
+30-second tolerance (median offset 3.2 s), confirming that both methods
+detect the same physical events where data coverage overlaps.
+
+**Phase 3 cross-validation:** Of the 1,559 Singer events in our coverage:
+- **1,052 (67.5%)** appear in the Phase 3 combined catalogue
+- **689 (44.2%)** appear in *both* seismic and cryogenic bands —
+  consistent with broadband events generating energy across the spectrum
+- **299 (19.2%)** are cryogenic only, **64 (4.1%)** seismic only
+- **223 (14.3%)** were detected but fell into discarded clusters
+- **284 (18.2%)** were not detected (below STA/LTA threshold)
+
+**By Singer classification:**
+
+| Singer label | In Phase 3 | Seismic | Cryogenic | Both bands |
+|-------------|-----------|---------|-----------|------------|
+| EQ (182 in coverage) | 130 (71%) | 13 | 20 | 97 |
+| IQ (1,167 in coverage) | 809 (69%) | 46 | 220 | 543 |
+| IDK (189 in coverage) | 104 (55%) | 5 | 50 | 49 |
 
 **Complementary classification approaches:** Singer's catalogue employs
 visual analysis of spectral information, assigning EQ or IQ labels based
-on the analyst's interpretation of spectrogram characteristics for each event.
-Our automated pipeline classifies events using quantitative spectral
-criteria (duration, spectral slope, peak frequency). These represent
-different — and complementary — analytical philosophies.
+on the analyst's interpretation of spectrogram characteristics. Our
+Phase 3 pipeline classifies events using bandpass-filtered spectral
+features within physically meaningful frequency regimes (1–14 Hz for
+seismic, >30 Hz for cryogenic). These represent different — and
+complementary — analytical philosophies.
 
-The cross-comparison reveals that Singer's EQ and IQ labels map to our
-three classes with similar distributions:
+A notable finding is that the majority of Singer's events (both EQ and IQ)
+appear in *both* our frequency bands, reflecting the broadband nature of
+many seismic and cryogenic events. Singer's EQ events show slightly higher
+Phase 3 recovery (71%) than IQ events (69%), though the difference is
+modest. The frequency-band approach adds value by providing an
+objective, physics-based separation: events whose energy concentrates
+below 14 Hz (T-phases propagated through the SOFAR channel) are
+distinguished from events with energy above 30 Hz (local cryogenic
+sources whose high-frequency content has not been attenuated by
+long-range propagation).
 
-| Singer label | → Our T-phase | → Our icequake | → Our vessel |
-|-------------|---------------|----------------|-------------|
-| EQ (152 matched) | 66% | 20% | 14% |
-| IQ (847 matched) | 66% | 18% | 16% |
-| IDK (155 matched) | 68% | 19% | 13% |
+**Singer's EQ/IQ boundary:** The constitution notes that Singer's EQ
+events show a seasonal pattern correlated with IQ events, suggesting
+some degree of misclassification between the two categories in the
+manual catalogue. Our frequency-band approach sidesteps this ambiguity
+by classifying based on spectral content rather than source
+interpretation, though at the cost of not distinguishing tectonic from
+cryogenic sources that produce energy in both frequency bands.
 
-The similar distributions across all three of Singer's categories suggest
-that the two classification schemes are capturing different axes of
-variation in the event population. Singer's visual spectral approach groups
-events by an analyst's holistic interpretation, while our automated approach
-applies quantitative feature boundaries. Both provide useful information —
-expert interpretation captures contextual subtleties, while quantitative
-criteria ensure reproducibility and scale to large populations.
-
-**Value added by spectral classification:** The automated pipeline
-introduces a quantitative distinction between impulsive tectonic T-phases
-(duration ≤3 s, spectral slope < −0.5) and emergent cryogenic events
-(duration >3 s, slope −0.2 to −0.5) that is difficult to apply
-consistently in manual analysis. Panel (b) of the comparison figure shows
-that Singer's EQ and IQ detections both track our T-phase monthly pattern,
-while our icequake population exhibits a distinct austral summer peak
-consistent with seasonal calving and ice fracture activity. This
-seasonal separation provides independent physical evidence supporting the
-spectral classification boundaries.
-
-**Feature-space context:** Panel (c) shows that Singer's EQ and IQ events
-occupy overlapping regions of duration–spectral slope space. The automated
-classification boundaries partition this continuum into populations with
-distinct temporal and spatial signatures, adding a waveform-based
-dimension to the geographic framework established by Singer's manual
-analysis.
-
-> **Figure: Ground Truth — Singer Comparison** (`paper/ground_truth_singer.png`)
->
-> **Temporary Caption:** Comparison between our automated spectral
-> classification and Singer's visual spectral catalogue (18,505 events
-> from the same hydrophone data, 1,275 matched within data-coverage
-> overlap). (a) Classification cross-comparison: Singer's labels (rows)
-> vs. our labels (columns) for matched events. All three of Singer's
-> categories map to our classes with similar distributions, reflecting the
-> complementary nature of visual vs. automated spectral classification
-> approaches. (b) Monthly event counts: Singer EQ and IQ (bars, left axis)
-> overlaid with our T-phase and icequake detections (lines, right axis).
-> Our icequake population shows a seasonal signal (summer peak) not
-> resolved by the visual classification. (c) Duration vs. spectral
-> slope for matched events colored by Singer's label, illustrating the
-> overlapping feature-space distributions that the automated spectral
-> boundaries partition into physically interpretable populations.
+Script: `crossvalidate_seismic_catalogues.py`.
 
 ---
 
