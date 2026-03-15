@@ -38,7 +38,10 @@ FEATURE_COLS = (
 )
 
 # === Whale filter ===
-PEAK_FREQ_MAX = 14.0  # Hz — remove events with catalogue peak_freq above this
+PEAK_FREQ_MAX = 17.0  # Hz — remove events with catalogue peak_freq above this
+# Raised from 14.0 to 17.0: cross-validation showed 14-17 Hz events are
+# genuine T-phases (matching accepted population in duration, slope, SNR),
+# not whale contamination. Hard 14 Hz cutoff was losing ~4K real seismic events.
 
 # === UMAP parameters ===
 UMAP_N_NEIGHBORS = 15
