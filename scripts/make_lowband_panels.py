@@ -72,11 +72,16 @@ def load_data():
     cat["end_utc"] = pd.to_datetime(cat["end_utc"])
 
     merged = umap_df.merge(cat, on="event_id", suffixes=("", "_cat"))
+    # Merge lowband features — these are from the filtered spectrogram
+    feat_cols = ["event_id", "peak_freq_hz", "peak_power_db",
+                 "spectral_slope", "bandwidth_hz", "spectral_centroid_hz"]
     merged = merged.merge(
-        features[["event_id", "peak_freq_hz", "peak_power_db",
-                   "spectral_slope", "bandwidth_hz", "spectral_centroid_hz"]],
-        on="event_id", suffixes=("", "_feat"), how="left"
+        features[feat_cols],
+        on="event_id", suffixes=("_cat", ""), how="left"
     )
+    # Ensure lowband peak_freq_hz takes precedence (not the catalogue one)
+    if "peak_freq_hz_cat" in merged.columns:
+        merged = merged.drop(columns=["peak_freq_hz_cat"])
     return merged
 
 
@@ -154,9 +159,9 @@ def extract_snippet(event_row):
     waveform_filt = bandpass(segment, BP_LOW, BP_HIGH, SAMPLE_RATE)
     t_wave = np.arange(len(segment)) / SAMPLE_RATE
 
-    # Spectrogram — high resolution for low frequencies
+    # Spectrogram — on bandpass-filtered signal for consistency
     freqs, times, Sxx = spectrogram(
-        segment, fs=SAMPLE_RATE, nperseg=NPERSEG_DISPLAY,
+        waveform_filt, fs=SAMPLE_RATE, nperseg=NPERSEG_DISPLAY,
         noverlap=NOVERLAP_DISPLAY
     )
     freq_mask = freqs <= SPEC_FMAX
@@ -287,7 +292,9 @@ def main():
         clusters = [c for c in cluster_sizes.index
                     if c != "lowband_noise"]
         if not args.all:
-            clusters = [c for c in clusters if c != "lowband_5"]
+            # Skip the mega-cluster (largest cluster) unless --all
+            biggest = cluster_sizes.idxmax()
+            clusters = [c for c in clusters if c != biggest]
         # Sort smallest first
         clusters = sorted(clusters, key=lambda c: cluster_sizes[c])
 

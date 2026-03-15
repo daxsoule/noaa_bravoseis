@@ -868,14 +868,24 @@ produces broadband energy above 30 Hz, and fin whale calls dominate the
 - nperseg=2048 for better low-frequency resolution (~0.49 Hz per bin)
 - 6 feature bands of ~2 Hz each (1–3, 3–5, 5–7, 7–9, 9–11, 11–14 Hz)
 - 84,698 events from the low detection band
-- UMAP + HDBSCAN: **10 clusters**, silhouette 0.324, 1.4% noise
-- Two distinct populations emerged:
-  - **2–4 Hz** (~14K events): 6 clusters — possibly local earthquakes or
-    very low-frequency T-phases
-  - **10–13 Hz** (~69K events): 4 clusters including one mega-cluster (56K) —
-    likely T-phases
+- **Whale contamination filter**: removed 32,495 events (38.4%) with catalogue
+  peak_freq > 14 Hz (predominantly fin whale 20 Hz calls with sub-14 Hz leakage)
+- After filtering: 52,175 events
+- UMAP + HDBSCAN: **8 clusters + noise**, min_cluster_size=200, silhouette 0.083
 
-Scripts: `extract_features_lowband.py`, `make_lowband_panels.py`
+**Gold-standard review results (2026-03-15)**:
+- All clusters cross-referenced against R/V Sarmiento de Gamboa cruise report
+- **Accepted (14,405 events)**: lowband_7 (645, T-phase, highest confidence),
+  lowband_0 (5,195, T-phase/seismic), lowband_6 SNR>=6 (8,565, T-phase + local EQ)
+- **Discarded (6,734)**: lowband_5 (deployment noise), lowband_4 (false triggers),
+  lowband_3 (ambient noise)
+- **Deferred**: lowband_2 (312, tonal 2-5 Hz, consult Dziak), lowband_1 (643,
+  low-SNR), lowband_6 SNR<6 (~23,800, weak/mixed)
+- SNR >= 6 classification filter is per-detection; low-SNR detections may still be
+  locatable as secondary arrivals when same event has high SNR on a nearby mooring
+- Report: `outputs/docs/lowband_cluster_review_report.md`
+
+Scripts: `extract_features_lowband.py`, `cluster_lowband.py`, `make_lowband_panels.py`
 Data: `event_features_lowband.parquet`, `umap_coordinates_lowband.parquet`
 
 ### Source Location (Grid-Search TDOA)

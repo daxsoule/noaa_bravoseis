@@ -486,6 +486,18 @@ small fraction of T-phases are misclassified as vessel noise or icequakes.
 > T-phase support) and 249 T-phases predicted as icequake (3.0%). Icequake
 > and vessel classes have near-perfect recall (≥1.00).
 
+**Important caveat on interpretation:** These performance metrics reflect
+agreement with Phase 1 unsupervised labels, not ground truth accuracy. As
+described in §4.4, Phase 3 gold-standard review subsequently identified
+substantial contamination in the Phase 1 training clusters — including
+whale calls mislabeled as T-phases, icequakes in "known T-phase" clusters,
+and a mega-cluster containing all signal types. The high test-set F1
+(93.7%) should therefore be interpreted as a measure of *label consistency*
+(the CNN faithfully reproduces the Phase 1 labeling scheme) rather than
+true classification accuracy. Phase 3 frequency-band reclassification
+(§4.4) addresses this limitation by building new labels from
+frequency-separated clustering with expert gold-standard validation.
+
 The following three montages show representative examples of each event
 class, illustrating the spectral and temporal characteristics that
 distinguish them.
@@ -561,7 +573,19 @@ strong seasonal patterns consistent with known geophysical processes.
 > (§6.1) retaining only physically plausible winter events. Months
 > with no hydrophone coverage appear as gaps.
 
-### 4.4 Phase 3 — Classification Revision with Fixed Analysis Window
+**Active-source survey context:** The period January 21 through February 4,
+2019 overlaps with active-source seismic survey operations by the R/V
+*Sarmiento de Gamboa*. The survey used three source configurations: MCS1
+(1780 cu in, 5 m depth, Jan 21–26, Orca Volcano reflection lines),
+Tomography (2540 cu in, 15 m depth, Jan 26–29, Orca Volcano refraction),
+and MCS2 (1580 cu in, 5 m depth, Jan 30–Feb 4, Rift + Edifice A
+reflection lines). Mooring deployment operations occurred January 10–13,
+prior to the start of survey acquisition. Some detected events during the
+survey period represent controlled airgun pulses rather than natural
+seismicity; these are identified and excluded during Phase 3 classification
+review (§4.4).
+
+### 4.4 Phase 3 — Frequency-Band Reclassification
 
 At this point in the project, we had labels for all 297,170 events — but how
 much could we trust them? The classification pipeline looked good on paper
@@ -643,77 +667,107 @@ identified in the classification scheme.
 - **Fin whale 20 Hz calls identified**: Repetitive ~20 Hz pulses identified
   in low_1, low_2, and mid_0. The mid_0 cluster was dominated by a recurring
   signal initially described as "unknown ~12 s repeating signal." Inter-pulse
-  interval analysis (§4.4.5) confirmed these as fin whale (*Balaenoptera
+  interval analysis (§4.4.4) confirmed these as fin whale (*Balaenoptera
   physalus*) 20 Hz calls, establishing a 4th biological class not captured
   by the original 3-class scheme.
 
-#### 4.4.3 Problem 3: Variable Analysis Window
+#### 4.4.3 Revised Approach: Frequency-Band Reclassification
 
-Beyond the labeling issues, we also discovered a more subtle problem with
-how we were measuring each event in the first place. When you compare two
-sounds, you need to measure them the same way — if you record one sound for
-3 seconds and another for 12 seconds, the measurements are not directly
-comparable. The original pipeline adjusted the analysis window to fit each
-event's detected duration, which seemed reasonable but actually made it
-harder to compare events fairly.
+Rather than re-cluster all events together with a fixed analysis window
+(an approach we initially considered but abandoned), we adopted a
+fundamentally different strategy: separate events by frequency band
+*before* classification. The original pipeline detected events in three
+overlapping frequency bands (1–15, 15–30, 30–250 Hz) but then pooled
+all detections for clustering, allowing frequency to dominate the UMAP
+embedding and producing a single mega-cluster containing 99% of events
+when all-band clustering was attempted. The frequency-band approach
+eliminates this problem by clustering within physically meaningful
+frequency regimes where different source processes dominate.
 
-The original feature extraction used a variable-length analysis window:
-the detected event duration (onset to end) plus 2 seconds of padding on
-each side. This meant that a 1-second event was analyzed in a 5-second
-window while a 10-second event used a 14-second window. The variable
-window introduced two problems:
+Three frequency bands, each analyzed independently:
 
-1. **Inconsistent spectral context**: Short events had proportionally more
-   pre/post-event noise in their feature windows than long events, biasing
-   band-power features and spectral slope estimates.
-2. **CNN input incompatibility**: Spectrogram patches of different durations
-   require resampling or padding to a fixed size for CNN input, introducing
-   artifacts.
+1. **1–14 Hz (lowband)**: T-phases and local seismicity. These are
+   SOFAR-channel propagated signals whose energy concentrates below
+   ~14 Hz after long-range propagation through the deep sound channel.
+2. **14–30 Hz (midband)**: Whale-dominated — fin whale 20 Hz calls
+   (§4.4.4), and other biological signals. Set aside for a separate
+   biological acoustics study.
+3. **>30 Hz (highband)**: Icequakes and vessel noise, characterized by
+   broadband energy extending to 150–250 Hz. Pipeline pending.
 
-#### 4.4.4 Revised Approach: Fixed 15-Second Window
+**Lowband pipeline (1–14 Hz):**
 
-The solution to all three problems is straightforward: start over with a
-standardized measurement window. Instead of tailoring the window to each
-event's detected length, we use the exact same 15-second snapshot for every
-single event — like taking a photo with the same frame size every time, so
-all the pictures can be compared side by side. The onset pick (the moment
-the detector flagged the event) sits 5 seconds into this window, giving us
-context before the sound starts and 10 seconds of the sound itself.
+A 4th-order Butterworth bandpass filter (1–14 Hz) was applied to raw
+waveforms *before* spectrogram computation, ensuring that features
+reflect only the target frequency range rather than being contaminated
+by out-of-band energy. Spectrograms were computed with nperseg=2048
+(~0.49 Hz frequency resolution at 1 kHz sample rate), and 6 feature
+bands of ~2 Hz each were extracted within the 1–14 Hz range.
 
-To address all three problems simultaneously, we adopted a standardized
-analysis window of **15 seconds** for all events: **5 seconds before** the
-onset pick to **10 seconds after**. This window was chosen based on the
-following considerations:
+**Whale contamination filter:** Events whose original catalogue peak
+frequency exceeded 14 Hz were removed prior to clustering. This
+eliminated 32,495 events (38.4% of low-band detections), predominantly
+fin whale 20 Hz calls with sub-14 Hz spectral leakage that had triggered
+the low-band detector. After filtering: 52,175 events remained.
 
-- **T-phase coverage**: Literature reports typical submarine T-phase
-  durations of 10–60 seconds, but our detector captures the peak-energy
-  portion (typically 3–10 s as picked). The 10-second post-pick window
-  captures the core of most events, including the decay phase that the
-  variable window often truncated.
-- **Pre-pick context**: 5 seconds of pre-event data provides sufficient
-  baseline for noise characterization and captures the early onset that
-  the STA/LTA picker consistently misses.
-- **Classification consistency**: Every event is now characterized by
-  features extracted from an identically sized window, eliminating
-  duration-dependent biases in band powers, spectral slope, and
-  bandwidth estimates.
-- **CNN compatibility**: Fixed-duration spectrograms can be fed directly
-  to the CNN without resampling. With nperseg=1024 and noverlap=512 at
-  1 kHz, a 15-second window produces a spectrogram of consistent
-  dimensions across all events.
+**Clustering:** UMAP (n_neighbors=15, min_dist=0.01) followed by HDBSCAN
+(min_cluster_size=200, EOM selection method) produced 8 clusters plus
+noise (6,278 noise points, 12.0%).
 
-The full pipeline was re-executed with this change:
-1. Feature extraction (`extract_features.py`) — 297,170 events re-processed
-   with the fixed 15 s window
-2. UMAP + HDBSCAN clustering (`cluster_events.py`) — re-clustered on
-   revised features
-3. Gold-standard review — repeated on new clusters
+**Gold-standard review:** For each cluster, 15 events were selected via
+stratified sampling and reviewed as individual waveform + spectrogram
+panels. All clusters were cross-referenced against the R/V *Sarmiento
+de Gamboa* cruise report (survey line schedule and source configurations)
+to identify active-source survey artifacts.
 
-This revision supersedes the Phase 1 and Phase 2 results reported in
-§4.1–4.2. Updated cluster counts, classification tables, and validation
-results are reported once the revised pipeline completes.
+**Lowband cluster results:**
 
-#### 4.4.5 Fin Whale 20 Hz Call Identification
+| Cluster | Events | Median freq | Verdict | Signal type |
+|---------|--------|-------------|---------|-------------|
+| lowband_7 | 645 | 11.7 Hz | Accept | T-phase (highest confidence) |
+| lowband_0 | 5,195 | 9.3 Hz | Accept | T-phase / seismic |
+| lowband_6 (SNR>=6) | 8,565 | 9.8 Hz | Accept | T-phases + local earthquakes |
+| lowband_6 (SNR<6) | ~23,800 | 9.8 Hz | Defer | Weak, mixed quality |
+| lowband_2 | 312 | 3.4 Hz | Consult | Tonal 2–5 Hz, unknown source |
+| lowband_1 | 643 | 2.0 Hz | Defer | Low-SNR, possibly seismic |
+| lowband_5 | 488 | 3.4 Hz | Discard | Deployment noise artifacts |
+| lowband_4 | 3,076 | 2.0 Hz | Discard | STA/LTA false triggers |
+| lowband_3 | 3,170 | 2.4 Hz | Discard | Ambient noise / mixed |
+
+**Total accepted for seismic catalogue: 14,405 events** from lowband
+review (lowband_7 + lowband_0 + lowband_6 with SNR >= 6).
+
+**Key findings from lowband gold-standard review:**
+
+- **lowband_7** shows textbook T-phase morphology: emergent onset,
+  spindle-shaped amplitude envelope, energy concentrated between 8–14 Hz.
+  Includes an August 21, 2019 seismic swarm (50 events in 4 hours).
+  Multi-mooring arrivals with consistent moveout confirm seismic origin.
+  This is our highest-confidence T-phase cluster.
+
+- **lowband_5** events are concentrated on January 12–13, 2019 (mooring
+  deployment dates), with M3 and M6 dominant. These were identified as
+  ship noise from deployment operations — not airgun pulses, as the
+  active-source survey did not begin until January 21.
+
+- **lowband_2** contains quasi-monochromatic 2–5 Hz signals with tonal,
+  sinusoidal character and harmonics — inconsistent with seismic events
+  or known biological sources. Currently under consultation with R. Dziak
+  (NOAA/PMEL) for possible identification.
+
+- **SNR >= 6 filter** applied to the mega-cluster (lowband_6, 32,365
+  events) isolates 8,565 events with clear seismic morphology, including
+  both emergent T-phases and impulsive local earthquakes. The remaining
+  ~23,800 low-SNR events are deferred pending further review.
+
+**Highband (>30 Hz) pipeline:** The same frequency-band separation
+approach will be applied to events with energy above 30 Hz to distinguish
+icequakes from vessel noise. This pipeline has not yet been implemented.
+
+This revision supersedes the Phase 1 and Phase 2 combined results
+reported in §4.1–4.2.
+
+#### 4.4.4 Fin Whale 20 Hz Call Identification
 
 Sometimes the most interesting discoveries come from things you were not
 looking for. During gold-standard review of the mid-band clusters, one
