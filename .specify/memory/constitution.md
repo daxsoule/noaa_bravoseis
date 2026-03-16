@@ -64,10 +64,8 @@ surface. Frequency band: 1–250 Hz.
 | BRA33 / M6 | H41 | 2019-01-13 21:26 | 2020-02-17/18 | 62° 14.989' | 57° 05.987' | 1717.1 | 468.1 |
 
 - **Deployment span**: ~13 months per mooring (398–405 days)
-- **Duty cycle**: 8 hours on (~2 consecutive 4-hour files), ~40 hours off,
-  repeating every ~2 days. ~5% temporal coverage. Recording hour drifts
-  across the deployment (not locked to a fixed UTC time).
-- **Files per mooring**: 104–125 `.DAT` files (717 total across all 6)
+- **Recording mode**: Continuous (back-to-back 4-hour files, no duty cycle gaps). 99.9% temporal coverage per mooring. Note: the 717-file development subset appeared to have a duty cycle (~8h on / ~40h off) because it was a sparse sample; the full archive is continuous.
+- **Files per mooring**: 2,428–2,452 `.DAT` files (14,663 total across all 6). Development subset: 104–125 files per mooring (717 total).
 - **Local path**: `/home/jovyan/my_data/bravoseis/NOAA/`
 - **Reader**: `read_dat.py` (project module)
 - **File format**: Binary `.DAT`, CSAC DAQ system, firmware `CFxLgSP3i2_3`
@@ -86,13 +84,28 @@ surface. Frequency band: 1–250 Hz.
   cross-correlation) but not absolute SPL without calibration documents.
 - **Processing heritage**: NOAA/PMEL IDL-based software library (Fox et al., 2001)
 
-### 2. Bathymetry (BRAVOSEIS experiment)
+### 2. Bathymetry (merged, three-layer)
 
-Multibeam bathymetry collected during the BRAVOSEIS cruise.
+Map figures use a three-layer merged bathymetry, highest resolution taking precedence:
 
-- **Local path**: `/home/jovyan/my_data/bravoseis/bathymetry/bransfield.xyz`
-- **Format**: ASCII XYZ (lon, lat, depth in meters)
-- **Coverage**: Bransfield Strait regional
+1. **IBCSO v2** (base layer): International Bathymetric Chart of the Southern Ocean
+   Version 2 (Dorschel et al., 2022). 500 m resolution, full Southern Ocean coverage.
+   - **Citation**: Dorschel, B., et al. (2022). The International Bathymetric Chart of
+     the Southern Ocean Version 2. *Scientific Data*, 9, 275. doi:10.1038/s41597-022-01366-7
+   - **Data DOI**: doi:10.1594/PANGAEA.937574
+   - **Local path**: `/home/jovyan/my_data/bravoseis/bathymetry/IBCSO_v2_bed_WGS84.nc`
+   - **Format**: NetCDF4, WGS84 geographic projection
+
+2. **BRAVOSEIS regional multibeam** (overlay): Collected during the BRAVOSEIS cruise.
+   - **Local path**: `/home/jovyan/my_data/bravoseis/bathymetry/bransfield.xyz`
+   - **Format**: ASCII XYZ (lon, lat, depth in meters)
+   - **Coverage**: Ship-track swath through central Bransfield Strait
+
+3. **Orca Volcano high-res model** (top layer): MGDS gridded bathymetry.
+   - **Local path**: `/home/jovyan/my_data/bravoseis/bathymetry/MGDS_Download/BRAVOSEIS/Orca_bathymetry.nc`
+   - **DOI**: 10.60521/332247
+   - **Coverage**: Central basin around Orca Volcano
+
 - **Coordinate system**: WGS84 geographic (lon/lat)
 
 ### 3. SEASICK Manual Detection Catalogue (NOAA/PMEL)
@@ -255,29 +268,17 @@ a Temp Caption so the context is never lost.
 Key observations and derived quantities useful for the methods section of the
 paper. Each entry is confirmed from data inspection or figure generation.
 
-### Recording Duty Cycle
+### Recording Mode
 
-The hydrophones operated on a duty cycle of approximately **8 hours of
-recording followed by ~40 hours off**, repeating every ~2 days. This yields
-roughly **5% temporal coverage** over each mooring's 13-month deployment.
-Each recording window consists of **two consecutive 4-hour DAT files**.
+The hydrophones recorded **continuously** in back-to-back 4-hour DAT files
+with no scheduled off-duty periods. Each mooring achieved **99.9% temporal
+coverage** over its ~408-day deployment (~2,440–2,452 files per mooring,
+14,663 total across all 6).
 
-The recording start time **drifts slowly across the deployment** — it is not
-locked to a fixed UTC hour. This is visible in the recording timeline figure
-(`recording_timeline.png`), where the bars shift gradually over the 13-month
-span.
-
-Across all 6 moorings, a total of **717 DAT files** were recorded
-(104–125 per mooring). M3 (BRA30/H13) has the fewest files (104), while
-M5 (BRA32/H24) has the most (125). M3's last recorded file extends to
-2020-02-22, slightly past the other moorings' final recordings on 2020-02-19.
-
-**Implication for analysis**: The ~5% duty cycle means transient events
-(earthquakes, ice quakes) may be missed if they occur during off periods.
-However, the duty cycle is sufficient for statistical characterization of
-event rates and spectral properties over weeks-to-months timescales.
-Cross-mooring detections are possible only when recording windows overlap,
-which they typically do since all moorings follow a similar schedule.
+Note: The initial 717-file development subset was a sparse sample of the
+full archive (~120 files per mooring) and appeared to follow a duty cycle
+(~8h on / ~40h off). Analysis of the complete dataset confirms continuous
+recording throughout the deployment.
 
 ### Event Detection Approach (spec 001)
 
@@ -566,7 +567,7 @@ in winter months.
 
 **Validation against Orca EQ catalogue** (5,789 located earthquakes):
 - Hydrophone coverage overlaps only ~11% of Orca catalogue (636 events)
-  due to ~5% duty cycle
+  in the 717-file development subset
 - Of covered Orca EQs: **89% matched at least one hydrophone detection**
   (within 5 min), confirming good detector sensitivity
 - **43% matched T-phase-labeled events** specifically; remainder detected
@@ -680,10 +681,10 @@ STA/LTA parameter calibration.
 
 ### Catalogue Summary
 
-The three-pass STA/LTA detector produced **297,170 detections** across 717
-four-hour DAT files from 6 moorings over ~13 months (Jan 2019 – Feb 2020).
-Due to the ~5% duty cycle, this represents a sparse but consistent sample of
-the Bransfield Strait acoustic environment.
+The three-pass STA/LTA detector produced **297,170 detections** on the
+717-file development subset (used for algorithm development and validation).
+The same algorithm applied to the full 14,663-file continuous archive
+produced **6,761,070 detections** across ~408 days per mooring.
 
 ### Phase 1 Event Classification
 

@@ -381,6 +381,10 @@ def process_file(filepath, mooring_key, pass_nums=None):
         # Pre-filter into this pass's frequency band
         filtered_data = apply_pass_filter(data, pcfg)
         # Run STA/LTA on the pre-filtered signal (single band)
+        # Note: detect_in_band() applies bandpass_filter() again with the same
+        # passband. This is intentional — the double 4th-order Butterworth
+        # effectively gives an 8th-order rolloff, providing steeper rejection
+        # of out-of-band energy for spectral characterization.
         band_name = pcfg["label"]
         band_range = pcfg["band"]
         dets = detect_in_band(filtered_data, band_name, band_range, file_ts)

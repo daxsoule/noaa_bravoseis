@@ -32,43 +32,79 @@ DATA_DIR = OUTPUT_DIR / "data"
 FIG_DIR = OUTPUT_DIR / "figures" / "paper"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
+BATHY_IBCSO = Path("/home/jovyan/my_data/bravoseis/bathymetry/IBCSO_v2_bed_WGS84.nc")
 BATHY_REGIONAL = Path("/home/jovyan/my_data/bravoseis/bathymetry/bransfield.xyz")
 BATHY_ORCA = Path("/home/jovyan/my_data/bravoseis/bathymetry/MGDS_Download/BRAVOSEIS/Orca_bathymetry.nc")
 
+# Map extent (slightly wider than set_extent for data loading margin)
+MAP_LON_MIN, MAP_LON_MAX = -62.5, -54.5
+MAP_LAT_MIN, MAP_LAT_MAX = -64.5, -60.7
+
 
 def load_bathy():
-    """Load and grid bathymetry data."""
-    print("Loading bathymetry...")
-    data = np.loadtxt(BATHY_REGIONAL)
-    lon_raw, lat_raw, z_raw = data[:, 0], data[:, 1], data[:, 2]
+    """Load merged bathymetry: IBCSO v2 base + BRAVOSEIS multibeam + Orca high-res overlay."""
+    import xarray as xr
+    from scipy.interpolate import RegularGridInterpolator
 
+    # --- Layer 1: IBCSO v2 (500 m, full coverage) ---
+    print("Loading IBCSO v2 base bathymetry...")
+    ds_ibcso = xr.open_dataset(BATHY_IBCSO)
+    sub = ds_ibcso.sel(lat=slice(MAP_LAT_MIN, MAP_LAT_MAX),
+                       lon=slice(MAP_LON_MIN, MAP_LON_MAX))
+    ibcso_lat = sub["lat"].values
+    ibcso_lon = sub["lon"].values
+    ibcso_z = sub["z"].values.astype(np.float64)
+    ds_ibcso.close()
+    print(f"  IBCSO grid: {ibcso_z.shape[0]} x {ibcso_z.shape[1]}")
+
+    # Build output grid at ~0.004° (~400 m) spacing to match multibeam resolution
     grid_spacing = 0.004
-    lon_1d = np.arange(lon_raw.min(), lon_raw.max(), grid_spacing)
-    lat_1d = np.arange(lat_raw.min(), lat_raw.max(), grid_spacing)
+    lon_1d = np.arange(MAP_LON_MIN, MAP_LON_MAX, grid_spacing)
+    lat_1d = np.arange(MAP_LAT_MIN, MAP_LAT_MAX, grid_spacing)
     lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d)
-    z_grid = griddata((lon_raw, lat_raw), z_raw, (lon_grid, lat_grid), method='linear')
 
-    # Overlay Orca high-res
+    # Interpolate IBCSO onto the output grid
+    ibcso_interp = RegularGridInterpolator(
+        (ibcso_lat, ibcso_lon), ibcso_z,
+        method="linear", bounds_error=False, fill_value=np.nan
+    )
+    pts = np.column_stack([lat_grid.ravel(), lon_grid.ravel()])
+    z_grid = ibcso_interp(pts).reshape(lat_grid.shape)
+    print(f"  Output grid: {z_grid.shape[0]} x {z_grid.shape[1]}")
+
+    # --- Layer 2: BRAVOSEIS regional multibeam (higher res where available) ---
+    if BATHY_REGIONAL.exists():
+        print("Overlaying BRAVOSEIS regional multibeam...")
+        data = np.loadtxt(BATHY_REGIONAL)
+        lon_raw, lat_raw, z_raw = data[:, 0], data[:, 1], data[:, 2]
+        z_mb = griddata((lon_raw, lat_raw), z_raw, (lon_grid, lat_grid), method="linear")
+        valid = ~np.isnan(z_mb)
+        z_grid[valid] = z_mb[valid]
+        print(f"  Replaced {valid.sum():,} cells with multibeam data")
+        del data, lon_raw, lat_raw, z_raw, z_mb
+
+    # --- Layer 3: Orca high-res (highest res in central basin) ---
     if BATHY_ORCA.exists():
-        import xarray as xr
-        from scipy.interpolate import RegularGridInterpolator
+        print("Overlaying Orca high-res bathymetry...")
         ds = xr.open_dataset(BATHY_ORCA)
-        interp = RegularGridInterpolator(
-            (ds['latitude'].values, ds['longitude'].values), ds['data'].values,
-            method='linear', bounds_error=False, fill_value=np.nan
+        orca_interp = RegularGridInterpolator(
+            (ds["latitude"].values, ds["longitude"].values), ds["data"].values,
+            method="linear", bounds_error=False, fill_value=np.nan
         )
-        lat_mask = (lat_1d >= float(ds['latitude'].min())) & (lat_1d <= float(ds['latitude'].max()))
-        lon_mask = (lon_1d >= float(ds['longitude'].min())) & (lon_1d <= float(ds['longitude'].max()))
+        lat_mask = (lat_1d >= float(ds["latitude"].min())) & (lat_1d <= float(ds["latitude"].max()))
+        lon_mask = (lon_1d >= float(ds["longitude"].min())) & (lon_1d <= float(ds["longitude"].max()))
         lon_mg, lat_mg = np.meshgrid(lon_1d[lon_mask], lat_1d[lat_mask])
-        z_interp = interp(np.column_stack([lat_mg.ravel(), lon_mg.ravel()])).reshape(lat_mg.shape)
-        valid = ~np.isnan(z_interp)
+        z_orca = orca_interp(np.column_stack([lat_mg.ravel(), lon_mg.ravel()])).reshape(lat_mg.shape)
+        valid = ~np.isnan(z_orca)
         lat_idx = np.where(lat_mask)[0]
         lon_idx = np.where(lon_mask)[0]
         for jj, j in enumerate(lat_idx):
             for ii, i in enumerate(lon_idx):
                 if valid[jj, ii]:
-                    z_grid[j, i] = z_interp[jj, ii]
+                    z_grid[j, i] = z_orca[jj, ii]
+        n_replaced = valid.sum()
         ds.close()
+        print(f"  Replaced {n_replaced:,} cells with Orca data")
 
     return lon_grid, lat_grid, z_grid
 

@@ -25,6 +25,9 @@ from read_dat import MOORINGS
 
 
 # === Paths ===
+BATHY_IBCSO_PATH = Path(
+    "/home/jovyan/my_data/bravoseis/bathymetry/IBCSO_v2_bed_WGS84.nc"
+)
 BATHY_REGIONAL_PATH = Path(
     "/home/jovyan/my_data/bravoseis/bathymetry/bransfield.xyz"
 )
@@ -188,64 +191,71 @@ def make_bathy_map():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # --- Load XYZ data ---
-    print("Loading regional bathymetry...")
-    data = np.loadtxt(BATHY_REGIONAL_PATH)
-    lon_raw = data[:, 0]
-    lat_raw = data[:, 1]
-    z_raw = data[:, 2]
-    print(f"  Points: {len(z_raw):,}")
-    print(f"  Lon: {lon_raw.min():.2f} to {lon_raw.max():.2f}")
-    print(f"  Lat: {lat_raw.min():.2f} to {lat_raw.max():.2f}")
-    print(f"  Depth: {z_raw.min():.0f} to {z_raw.max():.0f} m")
+    # --- Layer 1: IBCSO v2 base (500 m, full coverage) ---
+    import xarray as xr
+    from scipy.interpolate import RegularGridInterpolator
 
-    # --- Grid the scattered data ---
-    print("Gridding data (~0.004° spacing)...")
+    print("Loading IBCSO v2 base bathymetry...")
+    ds_ibcso = xr.open_dataset(BATHY_IBCSO_PATH)
+    sub = ds_ibcso.sel(
+        lat=slice(MAP_LAT_MIN - 0.5, MAP_LAT_MAX + 0.5),
+        lon=slice(MAP_LON_MIN - 0.5, MAP_LON_MAX + 0.5),
+    )
+    ibcso_lat = sub["lat"].values
+    ibcso_lon = sub["lon"].values
+    ibcso_z = sub["z"].values.astype(np.float64)
+    ds_ibcso.close()
+    print(f"  IBCSO grid: {ibcso_z.shape[0]} x {ibcso_z.shape[1]}")
+
+    # Build output grid at ~0.004° spacing
     grid_spacing = 0.004
-    lon_grid_1d = np.arange(lon_raw.min(), lon_raw.max(), grid_spacing)
-    lat_grid_1d = np.arange(lat_raw.min(), lat_raw.max(), grid_spacing)
+    lon_grid_1d = np.arange(MAP_LON_MIN - 0.5, MAP_LON_MAX + 0.5, grid_spacing)
+    lat_grid_1d = np.arange(MAP_LAT_MIN - 0.5, MAP_LAT_MAX + 0.5, grid_spacing)
     lon_grid, lat_grid = np.meshgrid(lon_grid_1d, lat_grid_1d)
-    print(f"  Grid size: {len(lon_grid_1d)} x {len(lat_grid_1d)}")
+    print(f"  Output grid: {len(lon_grid_1d)} x {len(lat_grid_1d)}")
 
-    z_grid = griddata(
+    ibcso_interp = RegularGridInterpolator(
+        (ibcso_lat, ibcso_lon), ibcso_z,
+        method="linear", bounds_error=False, fill_value=np.nan
+    )
+    pts = np.column_stack([lat_grid.ravel(), lon_grid.ravel()])
+    z_grid = ibcso_interp(pts).reshape(lat_grid.shape)
+    print(f"  Depth range: {np.nanmin(z_grid):.0f} to {np.nanmax(z_grid):.0f} m")
+
+    # --- Layer 2: BRAVOSEIS regional multibeam (higher res where available) ---
+    print("Overlaying BRAVOSEIS regional multibeam...")
+    data = np.loadtxt(BATHY_REGIONAL_PATH)
+    lon_raw, lat_raw, z_raw = data[:, 0], data[:, 1], data[:, 2]
+    print(f"  Points: {len(z_raw):,}")
+    z_mb = griddata(
         (lon_raw, lat_raw), z_raw,
         (lon_grid, lat_grid),
         method='linear'
     )
-    print(f"  Gridded depth range: {np.nanmin(z_grid):.0f} to {np.nanmax(z_grid):.0f} m")
+    valid = ~np.isnan(z_mb)
+    z_grid[valid] = z_mb[valid]
+    print(f"  Replaced {valid.sum():,} cells with multibeam data")
+    del data, lon_raw, lat_raw, z_raw, z_mb
 
-    # Free raw data
-    del data, lon_raw, lat_raw, z_raw
-
-    # --- Overlay MGDS Orca bathymetry (BRAVOSEIS gridded model) ---
+    # --- Layer 3: Orca high-res (highest res in central basin) ---
     if BATHY_ORCA_PATH.exists():
-        import xarray as xr
-        print("Loading MGDS Orca bathymetry (netCDF)...")
+        print("Overlaying MGDS Orca bathymetry (netCDF)...")
         ds_orca = xr.open_dataset(BATHY_ORCA_PATH)
         orca_lat = ds_orca['latitude'].values
         orca_lon = ds_orca['longitude'].values
-        orca_z = ds_orca['data'].values  # meters, negative = ocean
+        orca_z = ds_orca['data'].values
         print(f"  Grid: {orca_z.shape[0]} x {orca_z.shape[1]}")
-        print(f"  Lat: {orca_lat.min():.4f} to {orca_lat.max():.4f}")
-        print(f"  Lon: {orca_lon.min():.4f} to {orca_lon.max():.4f}")
 
-        # Resample Orca grid onto the regional grid via interpolation
-        from scipy.interpolate import RegularGridInterpolator
         interp = RegularGridInterpolator(
             (orca_lat, orca_lon), orca_z,
             method='linear', bounds_error=False, fill_value=np.nan
         )
 
-        # Find regional grid cells within Orca extent
         lat_mask = (lat_grid_1d >= orca_lat.min()) & (lat_grid_1d <= orca_lat.max())
         lon_mask = (lon_grid_1d >= orca_lon.min()) & (lon_grid_1d <= orca_lon.max())
-        lat_sub = lat_grid_1d[lat_mask]
-        lon_sub = lon_grid_1d[lon_mask]
-        lon_mg, lat_mg = np.meshgrid(lon_sub, lat_sub)
-        pts = np.column_stack([lat_mg.ravel(), lon_mg.ravel()])
-        z_interp = interp(pts).reshape(lat_mg.shape)
+        lon_mg, lat_mg = np.meshgrid(lon_grid_1d[lon_mask], lat_grid_1d[lat_mask])
+        z_interp = interp(np.column_stack([lat_mg.ravel(), lon_mg.ravel()])).reshape(lat_mg.shape)
 
-        # Replace where Orca has valid data
         valid = ~np.isnan(z_interp)
         lat_idx = np.where(lat_mask)[0]
         lon_idx = np.where(lon_mask)[0]
@@ -394,9 +404,10 @@ def make_bathy_map():
         "10m-resolution Natural Earth coastlines. Red triangles show NOAA/PMEL "
         "autonomous hydrophone mooring locations (BRA28\u2013BRA33), deployed "
         "January 2019 \u2013 February 2020. Shaded relief computed with illumination "
-        "from 315\u00b0 azimuth, 45\u00b0 altitude. Bathymetry from multibeam data "
-        "collected during the BRAVOSEIS experiment, 2019\u20132020. High-resolution "
-        "bathymetry in the central basin from MGDS gridded model "
+        "from 315\u00b0 azimuth, 45\u00b0 altitude. Base bathymetry from IBCSO v2 "
+        "(Dorschel et al., 2022; 500 m resolution), overlaid with higher-resolution "
+        "multibeam data collected during the BRAVOSEIS experiment, 2019\u20132020. "
+        "Highest-resolution bathymetry in the central basin from MGDS gridded model "
         "(DOI: 10.60521/332247). Projection: Mercator (WGS84)."
     )
     add_caption_justified(fig, caption, caption_width=0.85, fontsize=FS_CAPTION,

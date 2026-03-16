@@ -196,7 +196,7 @@ def load_lowband_data():
     print(f"\nOur lowband pipeline:")
     print(f"  Total catalogue events: {len(cat):,}")
     print(f"  Lowband features extracted: {len(lb_features):,}")
-    print(f"  Whale-filtered (cat peak_freq > 14 Hz): {n_whale:,}")
+    print(f"  Whale-filtered (cat peak_freq > 17 Hz): {n_whale:,}")
     print(f"  Lowband clustered: {len(lb_umap):,}")
     print(f"  Accepted lowband events: {len(accepted_ids):,}")
 
